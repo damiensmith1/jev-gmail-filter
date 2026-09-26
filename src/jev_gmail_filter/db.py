@@ -218,6 +218,42 @@ class Store:
         )
         return [(r["gmail_id"], json.loads(r["data"])) for r in rows]
 
+    def recent_emails(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Newest judged emails with each topic's latest outcome and category."""
+        emails = self._db.execute(
+            "SELECT * FROM emails ORDER BY received_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        out = []
+        for e in emails:
+            rows = self._db.execute(
+                "SELECT topic, outcome, category, p FROM results WHERE gmail_id = ? "
+                "ORDER BY created_at",
+                (e["gmail_id"],),
+            )
+            outcomes = {r["topic"]: (r["outcome"], r["category"], r["p"]) for r in rows}
+            out.append({**dict(e), "outcomes": outcomes})
+        return out
+
+    def item_emails(self, item_id: int) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            "SELECT e.subject, e.sender, e.received_at, ie.category FROM item_emails ie "
+            "JOIN emails e ON e.gmail_id = ie.gmail_id WHERE ie.item_id = ? "
+            "ORDER BY e.received_at DESC",
+            (item_id,),
+        )
+        return [dict(r) for r in rows]
+
+    def set_item_status(self, item_id: int, status: str | None, last_stage: str | None) -> None:
+        with self._db:
+            self._db.execute(
+                "UPDATE items SET status = ?, last_stage = ? WHERE id = ?",
+                (status, last_stage, item_id),
+            )
+
+    def set_item_notes(self, item_id: int, notes: str) -> None:
+        with self._db:
+            self._db.execute("UPDATE items SET notes = ? WHERE id = ?", (notes, item_id))
+
     def email_count(self) -> int:
         return self._db.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
 
@@ -325,6 +361,12 @@ class Store:
             (gmail_id, topic, kind, json.dumps(reasons), json.dumps(suggestion), now()),
         )
         return int(cur.lastrowid)
+
+    def forget(self, gmail_id: str) -> None:
+        """Drop an email's results and open reviews so it's judged again."""
+        with self._db:
+            self._db.execute("DELETE FROM results WHERE gmail_id = ?", (gmail_id,))
+            self._db.execute("DELETE FROM reviews WHERE gmail_id = ? AND resolved = 0", (gmail_id,))
 
     def reviews(self, *, include_resolved: bool = False) -> list[Review]:
         where = "" if include_resolved else "WHERE r.resolved = 0"

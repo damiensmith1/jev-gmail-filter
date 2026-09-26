@@ -1,5 +1,6 @@
 """`jev-gmail-filter` command line.
 
+ui       the web UI, with the same guided setup on first run
 init     guided setup: API key, your Google OAuth client, sign-in, topics, backscan
 sync     judge new Primary-inbox mail
 watch    sync every few minutes
@@ -14,7 +15,6 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
-import shutil
 import sys
 import time
 from collections.abc import Callable
@@ -24,35 +24,14 @@ from typing import Any
 
 import jevfilter as jf
 
-from . import __version__
-from .config import EXAMPLE_TOPICS, Settings, load_settings
+from . import __version__, onboarding
+from .config import Settings, load_settings
 from .db import Store
-from .gmail import GmailSource, MailSource, SetupError, authorize, check_client_file, primary_query
+from .gmail import MailSource, SetupError, check_client_file
 from .pipeline import Pipeline, SyncReport
 
 Ask = Callable[[str], str]
 Connect = Callable[[Settings], MailSource]
-
-GOOGLE_STEPS = """\
-You'll create your own Google OAuth client. It takes about 10 minutes, once.
-Everyone who uses this app does this, so no one else's app ever sees your mail.
-
-  1. Go to https://console.cloud.google.com and create a project (any name).
-  2. APIs & Services -> Library -> search "Gmail API" -> Enable.
-  3. Google Auth Platform -> Branding / Audience: choose "External", any app
-     name, and your own email as the support and developer contact.
-     Data Access -> Add scope: https://www.googleapis.com/auth/gmail.modify
-  4. Audience -> Publish app ("In production"). If you leave it in "Testing",
-     Google signs you out every 7 days. Publishing does not submit it for
-     verification; it stays your own unverified app, which is fine.
-  5. Clients -> Create client -> Application type "Desktop app" -> Create,
-     then Download JSON.
-  6. Next, your browser opens to sign in. Google will say it "hasn't verified
-     this app": that's your own app, so choose Advanced -> Go to <your app>,
-     then allow access.
-"""
-
-BACKSCAN_CHOICES = {"1": 1.0, "2": 7.0, "3": 14.0, "4": 30.0}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -90,6 +69,10 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help="guided first-time setup").set_defaults(run=cmd_init)
 
+    ui = sub.add_parser("ui", help="open the web UI (setup wizard on first run)")
+    ui.add_argument("--port", type=int, default=8501)
+    ui.set_defaults(run=cmd_ui)
+
     s = sub.add_parser("sync", help="judge new Primary-inbox mail")
     s.add_argument("--since-days", type=float, help="rescan this many days back")
     s.add_argument("--limit", type=int, help="process at most this many emails")
@@ -105,6 +88,7 @@ def _parser() -> argparse.ArgumentParser:
     r = sub.add_parser("review", help="list, or resolve: review <id> <yes|no|new|item id>")
     r.add_argument("id", nargs="?", type=int)
     r.add_argument("decision", nargs="?")
+    r.add_argument("--recheck", action="store_true", help="judge everything in review again")
     r.set_defaults(run=cmd_review)
 
     i = sub.add_parser("items", help="tracked items")
@@ -122,6 +106,8 @@ def _parser() -> argparse.ArgumentParser:
 
 # -- init ----------------------------------------------------------------------------
 
+BACKSCAN_CHOICES = {"1": 1.0, "2": 7.0, "3": 14.0, "4": 30.0}
+
 
 def cmd_init(
     args: argparse.Namespace,
@@ -131,18 +117,16 @@ def cmd_init(
 ) -> int:
     settings.ensure()
     prompt = ask or input
-    print(f"Setting up jev-gmail-filter. Your files go in {settings.data_dir}\n")
+    print(f"Setting up jev-gmail-filter. Your files go in {settings.data_dir}")
+    print("(Prefer a browser? `jev-gmail-filter ui` runs the same setup there.)\n")
 
     print("Step 1/5 - TypeSafe API key")
     if os.environ.get("TYPESAFE_API_KEY"):
         print("  found TYPESAFE_API_KEY\n")
     else:
         question = "  paste your TypeSafe API key: "
-        key = (ask(question) if ask else getpass.getpass(question + "(hidden) ")).strip()
-        if not key:
-            raise SetupError("an API key is needed; get one from TypeSafe and run init again")
-        _save_env(settings.env_path, "TYPESAFE_API_KEY", key)
-        os.environ["TYPESAFE_API_KEY"] = key
+        key = ask(question) if ask else getpass.getpass(question + "(hidden) ")
+        onboarding.save_api_key(settings, key)
         print(f"  saved to {settings.env_path.name} (gitignored)\n")
 
     print("Step 2/5 - Your Google OAuth client")
@@ -150,16 +134,17 @@ def cmd_init(
         check_client_file(settings.credentials_path)
         print("  already set up\n")
     else:
-        print(GOOGLE_STEPS)
-        raw = prompt("  path to the JSON you downloaded in step 5: ").strip().strip("'\"")
-        src = Path(raw).expanduser()
-        check_client_file(src)
-        shutil.copyfile(src, settings.credentials_path)
-        settings.credentials_path.chmod(0o600)
+        print("You'll create your own Google OAuth client. It takes about 10 minutes, once.")
+        print("Everyone who uses this app does this, so no one else's app ever sees your mail.\n")
+        for n, (title, detail) in enumerate(onboarding.GOOGLE_STEPS, 1):
+            print(f"  {n}. {title}: {detail}")
+        print(f"\n  {onboarding.TESTING_NOTE}")
+        raw = prompt("\n  path to the JSON you downloaded in step 3: ").strip().strip("'\"")
+        onboarding.install_client(settings, Path(raw))
         print(f"  copied to {settings.credentials_path} (gitignored)\n")
 
     print("Step 3/5 - Sign in to Gmail")
-    source = (connect or _connect_interactive)(settings)
+    source = (connect or onboarding.sign_in)(settings)
     print(f"  signed in as {source.address()}\n")
 
     print("Step 4/5 - Topics")
@@ -168,24 +153,23 @@ def cmd_init(
 
     print("Step 5/5 - How far back to scan")
     days = _choose_backscan(prompt)
-    since = datetime.now(UTC) - timedelta(days=days)
-    ids = list(source.search(primary_query(since)))
-    low, high = _estimate(source, topics, ids)
-    print(f"  {len(ids)} emails in your Primary inbox from the last {days:g} days")
-    print(f"  estimated Jev cost: ${low:.4f} to ${high:.4f}")
+    est = onboarding.estimate(source, topics, days)
+    print(f"  {len(est.ids)} emails in your Primary inbox from the last {days:g} days")
+    print(f"  estimated Jev cost: ${est.low_usd:.4f} to ${est.high_usd:.4f}")
     dry = prompt("  dry run first (judge without writing Gmail labels)? [Y/n] ").strip().lower()
     labels_on = dry in ("n", "no")
-    store = Store(settings.db_path)
-    store.set_meta("labels", "on" if labels_on else "off")
-    store.set_meta("backscan_days", f"{days:g}")
+    onboarding.finish(settings, labels_on=labels_on, backscan_days=days)
     if prompt("  start the scan now? [Y/n] ").strip().lower() in ("", "y", "yes"):
-        cap = max(round(high * 2, 2), 0.05)
         pipeline = Pipeline(
-            store, source, topics, budget=jf.Budget(usd=cap), write_labels=labels_on
+            Store(settings.db_path),
+            source,
+            topics,
+            budget=jf.Budget(usd=onboarding.budget_for(est)),
+            write_labels=labels_on,
         )
-        _print_report(pipeline.sync(since=since, progress=_progress), labels_on)
+        _print_report(pipeline.sync(since=est.since, progress=_progress), labels_on)
     print(
-        "\nDone. Next: `jev-gmail-filter review`, `jev-gmail-filter items`, "
+        "\nDone. Next: `jev-gmail-filter ui`, `jev-gmail-filter review`, "
         "or keep it running with `jev-gmail-filter watch`."
     )
     if not labels_on:
@@ -194,19 +178,17 @@ def cmd_init(
 
 
 def _choose_topics(settings: Settings, ask: Ask) -> jf.Topics:
-    if any(settings.topics_dir.glob("*.yaml")) or any(settings.topics_dir.glob("*.json")):
+    if onboarding.has_topics(settings):
         return jf.Topic.load(settings.topics_dir)
-    examples = sorted(EXAMPLE_TOPICS.glob("*.yaml"))
-    for n, path in enumerate(examples, 1):
-        print(f"  {n}. {next(iter(jf.Topic.load(path)))}")
+    examples = onboarding.examples()
+    for n, ex in enumerate(examples, 1):
+        print(f"  {n}. {ex.name}: {ex.description}")
     raw = ask("  which examples to start with? (e.g. 1,2; Enter for all) ").strip()
     try:
         picks = examples if not raw else [examples[int(x) - 1] for x in raw.split(",")]
     except (ValueError, IndexError):
         raise ValueError(f"choose numbers from 1 to {len(examples)}") from None
-    for path in picks:
-        shutil.copyfile(path, settings.topics_dir / path.name)
-    return jf.Topic.load(settings.topics_dir)
+    return onboarding.install_topics(settings, [ex.path for ex in picks])
 
 
 def _choose_backscan(ask: Ask) -> float:
@@ -221,41 +203,61 @@ def _choose_backscan(ask: Ask) -> float:
     raise ValueError("choose 1 to 5")
 
 
-def _estimate(
-    source: MailSource, topics: jf.Topics, ids: list[str], sample: int = 5
-) -> tuple[float, float]:
-    """Cost range for `ids`: membership only (low) up to every topic matching (high)."""
-    if not ids:
-        return 0.0, 0.0
-    f = jf.Filter(topics, judge=_NoCalls(), speculative=False)
-    picks = ids[:: max(len(ids) // sample, 1)][:sample]
-    plans = [f.explain(source.get(i).state()) for i in picks]
-    low = sum(p.cost_usd for p in plans) / len(plans) * len(ids)
-    high = sum(p.max_cost_usd for p in plans) / len(plans) * len(ids)
-    return low, high
-
-
-class _NoCalls:
-    def ask(self, state: Any, questions: Any) -> Any:  # pragma: no cover
-        raise AssertionError("estimating must not call Jev")
-
-
-def _save_env(path: Path, key: str, value: str) -> None:
-    lines = path.read_text().splitlines() if path.exists() else []
-    lines = [ln for ln in lines if not ln.startswith(f"{key}=")] + [f"{key}={value}"]
-    path.write_text("\n".join(lines) + "\n")
-    path.chmod(0o600)
-
-
-def _connect_interactive(settings: Settings) -> MailSource:
-    return GmailSource(authorize(settings.credentials_path, settings.token_path))
-
-
 def _connect(settings: Settings) -> MailSource:
     if not settings.token_path.exists():
         raise SetupError("not signed in yet; run `jev-gmail-filter init`")
-    creds = authorize(settings.credentials_path, settings.token_path, interactive=False)
-    return GmailSource(creds)
+    return onboarding.connect(settings)
+
+
+def cmd_ui(args: argparse.Namespace, settings: Settings) -> int:
+    """Start the web UI on this computer and open it in the browser."""
+    import subprocess
+    import urllib.request
+    import webbrowser
+
+    app = Path(__file__).with_name("app.py")
+    url = f"http://localhost:{args.port}"
+    env = {**os.environ, "JGF_DATA_DIR": str(settings.data_dir)}
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(app),
+        "--server.address",
+        "127.0.0.1",  # only this computer can reach it
+        "--server.port",
+        str(args.port),
+        "--server.headless",
+        "true",  # no Streamlit sign-up prompt; we open the browser
+        "--browser.gatherUsageStats",
+        "false",
+        "--global.developmentMode",
+        "false",
+        "--logger.level",
+        "warning",
+        "--client.toolbarMode",
+        "minimal",  # hides Streamlit's "Deploy" button; this app is local only
+    ]
+    # Streamlit's own banner prints a 127.0.0.1 URL and tips; show only ours (errors still show).
+    server = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL)
+    try:
+        for _ in range(100):  # wait up to ~20s for the server to answer
+            try:
+                urllib.request.urlopen(f"{url}/_stcore/health", timeout=1)
+                break
+            except OSError:
+                if server.poll() is not None:
+                    return server.returncode or 1
+                time.sleep(0.2)
+        print(f"jev-gmail-filter is running at {url} (on this computer only).", flush=True)
+        print("Press Ctrl-C here to stop it.", flush=True)
+        webbrowser.open(url)
+        return server.wait()
+    except KeyboardInterrupt:
+        server.terminate()
+        server.wait()
+        return 0
 
 
 # -- everyday commands -------------------------------------------------------------------
@@ -310,6 +312,10 @@ def cmd_watch(
 
 
 def cmd_review(args: argparse.Namespace, settings: Settings, connect: Connect | None = None) -> int:
+    if getattr(args, "recheck", False):
+        p = _open(settings, connect, budget=jf.Budget(usd=1.0))
+        _print_report(p.recheck_reviews(progress=_progress), p.write_labels)
+        return 0
     if args.id is not None:
         if not args.decision:
             raise ValueError("give a decision: yes / no (topic) or an item id / new (item)")

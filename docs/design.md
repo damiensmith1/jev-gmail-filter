@@ -120,7 +120,10 @@ State is the email: `from`, `subject`, `date`, `body` (trimmed).
    - `org`: sender name, sender domain, ATS subdomains, capitalised
      phrases after "at / to / from"
    - `title`: phrases ending in a role word
-   - plus values already seen on that topic's items
+   - plus values already on that topic's items, but only those the email
+     mentions (first real run: with 16 tracked jobs, unmentioned known
+     companies filled the 15-candidate cap and crowded out the email's own
+     company, sending 43 of 104 emails to review)
 
    Passed to jevfilter as `Content(email, candidates={topic: {field: [...]}})`.
    A value that isn't extracted can't be chosen, so the app tracks how
@@ -194,29 +197,35 @@ outside a hand-picked test list could use it.
 So **everyone brings their own OAuth client**, the maintainer included.
 Each user is then the only user of their own Google app, which Google
 treats as personal use: no verification, and no one else's credentials
-involved. The cost is a one-time, ~10-minute setup, so `init` walks
-through it step by step:
+involved. The cost is a one-time, few-minute setup, which `init` and the
+UI wizard walk through:
 
 1. **Create a project** at <https://console.cloud.google.com> (any name).
 2. **Enable the Gmail API** for it (APIs & Services → Library → Gmail API).
-3. **Configure the consent screen** (Google Auth Platform): user type
-   *External*, any app name, your own email as support and developer
-   contact. Add the scope `https://www.googleapis.com/auth/gmail.modify`.
-4. **Publish the app to "In production"** (Audience). Left in "Testing",
-   Google expires the sign-in every 7 days. Publishing does not mean
-   verification: the app stays unverified, which is fine for personal use.
-5. **Create an OAuth client**: Clients → Create → *Desktop app*. Download
-   the JSON and give its path to `init` (it's copied into the app's data
-   folder as `credentials.json`, which is gitignored).
-6. **Sign in**: `init` opens the browser. Google shows "Google hasn't
-   verified this app" because it's your own unverified app: choose
-   *Advanced → Go to (your app name)*, then allow access. The token is
-   saved locally as `token.json` (gitignored) and refreshed automatically.
+3. **Create a Desktop client**: Google Auth Platform → Clients → Create
+   client → *Desktop app* → Download JSON, and give it to the app (upload
+   in the UI, a path in `init`; copied into `data/credentials.json`,
+   gitignored). If Google first asks to configure the app, only a name,
+   the user's email and audience *External* are needed; logo, home page,
+   privacy policy and domains stay blank.
+4. **Sign in**: the browser opens Google's consent page. Google shows
+   "Google hasn't verified this app" because it's the user's own
+   unverified app: *Advanced → Go to (app name)*, then allow. The token is
+   saved as `data/token.json` (gitignored) and refreshed automatically.
 
-`init` checks each step it can (the file is a Desktop client, the Gmail
-API responds, the granted scope is `gmail.modify`) and says exactly which
-step to revisit when something fails. Removing access later: revoke it at
-<https://myaccount.google.com/permissions> and delete `token.json`.
+The app stays in Google's **Testing** mode. That's enough: the project
+owner can sign in without being listed as a test user (another account
+must be added under Audience → Test users), and the only cost is signing
+in again every 7 days. Publishing to "In production" would remove the
+7-day limit, but Google requires a home page URL, a privacy policy URL and
+an authorized domain to publish, even without verification, so it's not
+part of setup.
+
+`init` and the wizard check each step they can (the file is a Desktop
+client, the Gmail API responds, the granted scope is `gmail.modify`) and
+say which step to revisit when something fails. Removing access later:
+revoke it at <https://myaccount.google.com/permissions> and delete
+`token.json`.
 
 **Later, possibly:** a shared, Google-verified client so users can sign
 in with one click and skip the setup. Because all data stays on the
@@ -238,8 +247,9 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 - `db.py` — SQLite store (schema above)
 - `pipeline.py` — email → jevfilter (staged) → items / statuses → storage,
   labels, review queue; sync; stale refresh; resolving reviews
-- `cli.py` — `init`, `sync`, `watch`, `review`, `items`, `labels`, `status`
-- `app.py` (Streamlit) — Milestone 2
+- `onboarding.py` — the setup steps, shared by `init` and the UI wizard
+- `cli.py` — `ui`, `init`, `sync`, `watch`, `review`, `items`, `labels`, `status`
+- `app.py` — the Streamlit web UI (below)
 
 `topics/examples/` ships sample topics; `init` copies the chosen ones into
 `data/topics/`, where the user edits them.
@@ -259,14 +269,53 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 - Labels: a match gets `<label>` and `<label>/<category>`. Labels can be
   off (dry run); `labels` turns them on and labels past matches. A failed
   label write is reported, never loses the judgment.
+- Gmail rate limits: Gmail allows 6,000 quota units per user per minute,
+  and fetching a full message costs 20, so a fast backscan (~300+ emails a
+  minute) hits it. A client-side pacer charges each call its cost and waits
+  before any call that would push the last minute over 5,000 units (about
+  250 emails a minute), so syncs stay under the limit. As a backstop, every
+  request retries rate-limit and 5xx answers with exponential backoff (up to
+  ~2 minutes); if Gmail still refuses, the sync stops cleanly and resumes
+  next time.
+- Re-check: the review queue can be judged again with the current code
+  and topics (UI button, `review --recheck`), e.g. after a topic edit.
 - Reviews: uncertain membership → a "topic" review (yes / no); an
   uncertain item match → an "item" review (item id / new). Resolving applies
   the same labelling and tracking as an automatic match.
 
+## Web UI
+
+`jev-gmail-filter ui` runs Streamlit on 127.0.0.1 only. Until setup is
+done it shows the wizard, the same five steps as `init`: API key (saved to
+`.env`), the user's own OAuth client (numbered Google Cloud steps, then
+**upload** the downloaded JSON, validated as a Desktop client), **Sign in
+with Google** (the browser consent flow; the wizard explains the
+"unverified app" screen), starter topics as checkboxes, and the backscan
+window with email count and cost estimate, dry run by default, then a
+progress bar. After setup, pages:
+
+Scans (first scan, Sync now, Rescan, auto-sync) run on a background
+thread, one at a time, so refreshing or switching pages doesn't stop
+them; every page shows live progress and then the result. Streamlit's
+"Deploy" button is hidden (`client.toolbarMode minimal`): the app is
+local only.
+
+- **Overview** — counts, spend, last sync, **Sync now**; optional auto-sync
+  every N minutes while the page is open (`watch` is the always-on option)
+- **Review** — a card per uncertain email: Yes / No, or pick the item (or new)
+- **Items** — per tracked topic, a column per status; stale items flagged;
+  details (linked emails, manual status change, notes); add an item by hand
+- **Emails** — recent emails with the topics and categories they matched
+- **Topics** — edit the YAML (validated before saving), create a topic
+  from a name, description and optional categories, delete, rescan
+- **Settings** — labels on/off (turning on labels past matches), spend cap
+  per sync, auto-sync interval, sign out
+
 ## Status
 
-Milestone 1 (CLI end to end) is built: everything above except the web
-UI. Tested with a fake Gmail and a scripted Jev (no network); checked end
+Milestone 1 (CLI end to end) and Milestone 2 (web UI with the setup
+wizard) are built. UI tests drive the whole wizard and every page
+headlessly. Tested with a fake Gmail and a scripted Jev (no network); checked end
 to end against real Jev with a fake inbox (6 realistic emails: all
 classified correctly, the follow-up linked to the right job, $0.00036).
 Not yet run against a real Gmail account.
@@ -298,7 +347,8 @@ which cuts cost when most mail matches no topic, and category examples).
 - Jobs example: stale after 21 days; recruiter / HR / hiring-team contact
   matches an existing job or creates a new one (no separate "lead").
 - Everyone, the maintainer included, brings their own Google OAuth client
-  (Desktop app, `gmail.modify`), set up through a guided `init`. No shared
+  (Desktop app, `gmail.modify`), set up through the guided `init` / UI
+  wizard, and stays in Google's Testing mode (re-sign-in every 7 days). No shared
   client for now; Google verification of a shared one may come later.
 - User topics live in `data/topics/` (gitignored), not the repo, so
   personal topics never end up in a commit; the repo ships only examples.

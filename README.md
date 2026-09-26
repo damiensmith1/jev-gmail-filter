@@ -12,7 +12,7 @@ with TypeSafe's Jev.
 Self-hosted and local: your email, topics and database stay on your machine.
 Only your Primary inbox is read.
 
-> Early development. The command line works; a web UI comes next.
+> Early development: works end to end, not yet battle-tested on many inboxes.
 
 ## Setup (about 15 minutes, once)
 
@@ -23,10 +23,11 @@ and a Google account.
 git clone https://github.com/damiensmith1/jev-gmail-filter
 cd jev-gmail-filter
 uv sync
-uv run jev-gmail-filter init
+uv run jev-gmail-filter ui
 ```
 
-`init` walks you through everything:
+Your browser opens on a setup wizard (prefer the terminal? `uv run
+jev-gmail-filter init` asks the same questions). It walks you through:
 
 1. your TypeSafe API key (saved to `.env`, gitignored)
 2. **your own Google OAuth client**: step-by-step instructions for Google
@@ -41,6 +42,13 @@ Your files live in `./data` (gitignored): the OAuth client and token, your
 topics, and the SQLite database.
 
 ## Use
+
+In the web UI (`uv run jev-gmail-filter ui`): an overview with **Sync
+now**, the **Review** queue, your tracked **Items** as a board per status,
+recent **Emails**, **Topics** (edit, add, rescan) and **Settings** (labels,
+spend cap, auto-sync, sign out).
+
+Or from the terminal:
 
 ```sh
 uv run jev-gmail-filter sync          # judge new mail (spend cap: --max-usd, default $1)

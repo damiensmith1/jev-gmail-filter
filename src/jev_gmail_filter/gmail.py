@@ -8,7 +8,10 @@ their own OAuth client (see docs/design.md → Google access).
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+import threading
+import time
+from collections import deque
+from collections.abc import Callable, Iterator
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -18,6 +21,55 @@ from .mail import Email, parse_message
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 PRIMARY = "in:inbox category:primary"
 PRIMARY_LABEL = "CATEGORY_PERSONAL"  # Gmail's internal id for the Primary tab
+RETRIES = 6
+"""Gmail limits requests per user per minute. On a rate-limit (or 5xx) answer the
+Google client waits with exponential backoff and retries: up to ~2 minutes in all."""
+
+
+# Gmail's per-user limit is 6,000 quota units per minute; each method has a cost.
+# https://developers.google.com/workspace/gmail/api/reference/quota
+UNITS_PER_MINUTE = 5_000  # headroom under 6,000 for Gmail itself / other clients
+COST = {
+    "get": 20,
+    "list": 5,
+    "modify": 5,
+    "history": 2,
+    "profile": 1,
+    "labels.list": 1,
+    "labels.create": 5,
+}
+
+
+class QuotaPacer:
+    """Waits before a request that would push the last minute over budget, so
+    syncs stay under Gmail's per-user rate limit instead of hitting it."""
+
+    def __init__(
+        self,
+        units_per_minute: int = UNITS_PER_MINUTE,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        self.budget = units_per_minute
+        self._clock = clock
+        self._sleep = sleep
+        self._spent: deque[tuple[float, int]] = deque()
+        self._lock = threading.Lock()
+        self.waited = 0.0
+
+    def take(self, units: int) -> None:
+        with self._lock:
+            while True:
+                now = self._clock()
+                while self._spent and now - self._spent[0][0] >= 60:
+                    self._spent.popleft()
+                used = sum(u for _, u in self._spent)
+                if used + units <= self.budget or not self._spent:
+                    self._spent.append((now, units))
+                    return
+                wait = 60 - (now - self._spent[0][0])
+                self.waited += wait
+                self._sleep(wait)
 
 
 class SetupError(Exception):
@@ -82,9 +134,9 @@ def authorize(credentials_path: Path, token_path: Path, *, interactive: bool = T
             creds = None  # revoked, or expired after 7 days in Testing mode
     if not interactive:
         raise SetupError(
-            "Google sign-in expired or was revoked. Run `jev-gmail-filter init` to sign in "
-            "again. If this happens every week, publish your OAuth app to 'In production' "
-            "(step 4)."
+            "Google sign-in expired or was revoked. Sign in again (Settings → Sign out, then "
+            "sign in, or `jev-gmail-filter init`). In Google's Testing mode this happens "
+            "every 7 days."
         )
     check_client_file(credentials_path)
     flow = InstalledAppFlow.from_client_secrets_file(str(credentials_path), SCOPES)
@@ -109,22 +161,27 @@ class GmailSource:
 
         self._svc = build("gmail", "v1", credentials=creds, cache_discovery=False)
         self._labels: dict[str, str] | None = None
+        self.pacer = QuotaPacer()
+
+    def _call(self, kind: str, request: Any) -> Any:
+        self.pacer.take(COST[kind])
+        return request.execute(num_retries=RETRIES)
 
     def address(self) -> str:
-        return self._svc.users().getProfile(userId="me").execute()["emailAddress"]
+        return self._call("profile", self._svc.users().getProfile(userId="me"))["emailAddress"]
 
     def history_id(self) -> str:
-        return str(self._svc.users().getProfile(userId="me").execute()["historyId"])
+        return str(self._call("profile", self._svc.users().getProfile(userId="me"))["historyId"])
 
     def search(self, query: str) -> Iterator[str]:
         token = None
         while True:
-            res = (
+            request = (
                 self._svc.users()
                 .messages()
                 .list(userId="me", q=query, maxResults=500, pageToken=token)
-                .execute()
             )
+            res = self._call("list", request)
             for m in res.get("messages", []):
                 yield m["id"]
             token = res.get("nextPageToken")
@@ -132,8 +189,8 @@ class GmailSource:
                 return
 
     def get(self, message_id: str) -> Email:
-        msg = self._svc.users().messages().get(userId="me", id=message_id, format="full").execute()
-        return parse_message(msg)
+        request = self._svc.users().messages().get(userId="me", id=message_id, format="full")
+        return parse_message(self._call("get", request))
 
     def new_since(self, history_id: str) -> tuple[list[str], str]:
         """Primary-inbox messages added since `history_id`, and the new id."""
@@ -143,19 +200,19 @@ class GmailSource:
         latest = history_id
         token = None
         while True:
-            try:
-                res = (
-                    self._svc.users()
-                    .history()
-                    .list(
-                        userId="me",
-                        startHistoryId=history_id,
-                        historyTypes=["messageAdded"],
-                        labelId="INBOX",
-                        pageToken=token,
-                    )
-                    .execute()
+            request = (
+                self._svc.users()
+                .history()
+                .list(
+                    userId="me",
+                    startHistoryId=history_id,
+                    historyTypes=["messageAdded"],
+                    labelId="INBOX",
+                    pageToken=token,
                 )
+            )
+            try:
+                res = self._call("history", request)
             except HttpError as e:
                 if e.resp.status == 404:
                     raise HistoryExpired() from e
@@ -172,30 +229,28 @@ class GmailSource:
 
     def add_labels(self, message_id: str, names: list[str]) -> None:
         label_ids = [self._label_id(n) for n in names]
-        self._svc.users().messages().modify(
-            userId="me", id=message_id, body={"addLabelIds": label_ids}
-        ).execute()
+        request = (
+            self._svc.users()
+            .messages()
+            .modify(userId="me", id=message_id, body={"addLabelIds": label_ids})
+        )
+        self._call("modify", request)
 
     def _label_id(self, name: str) -> str:
         if self._labels is None:
-            res = self._svc.users().labels().list(userId="me").execute()
+            res = self._call("labels.list", self._svc.users().labels().list(userId="me"))
             self._labels = {lab["name"]: lab["id"] for lab in res.get("labels", [])}
         if name not in self._labels:
             parent = name.rsplit("/", 1)[0] if "/" in name else None
             if parent:
                 self._label_id(parent)  # Gmail nests "A/B" under "A"
-            created = (
-                self._svc.users()
-                .labels()
-                .create(
-                    userId="me",
-                    body={
-                        "name": name,
-                        "labelListVisibility": "labelShow",
-                        "messageListVisibility": "show",
-                    },
-                )
-                .execute()
+            body = {
+                "name": name,
+                "labelListVisibility": "labelShow",
+                "messageListVisibility": "show",
+            }
+            created = self._call(
+                "labels.create", self._svc.users().labels().create(userId="me", body=body)
             )
             self._labels[name] = created["id"]
         return self._labels[name]

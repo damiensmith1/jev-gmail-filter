@@ -12,6 +12,7 @@ dependencies = [
     "google-auth-oauthlib>=1.2",
     "google-auth-httplib2>=0.2",
     "python-dotenv>=1",
+    "streamlit>=1.40",
 ]
 
 [project.scripts]

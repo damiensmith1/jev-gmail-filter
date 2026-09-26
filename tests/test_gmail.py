@@ -39,7 +39,8 @@ class Call:
     def __init__(self, fn):
         self.fn = fn
 
-    def execute(self):
+    def execute(self, num_retries=0):
+        assert num_retries > 0  # every request must retry rate limits
         return self.fn()
 
 
@@ -93,9 +94,12 @@ class StubService:
 
 
 def source(stub):
+    from jev_gmail_filter.gmail import QuotaPacer
+
     s = GmailSource.__new__(GmailSource)
     s._svc = stub
     s._labels = None
+    s.pacer = QuotaPacer(sleep=lambda _: None)
     return s
 
 
@@ -149,3 +153,45 @@ def test_new_since_expired_history():
     stub.history_error = HttpError(SimpleNamespace(status=404, reason="Not Found"), b"{}")
     with pytest.raises(HistoryExpired):
         source(stub).new_since("1")
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+        self.slept = []
+
+    def __call__(self):
+        return self.now
+
+    def sleep(self, seconds):
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def test_pacer_waits_instead_of_exceeding_the_minute_budget():
+    from jev_gmail_filter.gmail import QuotaPacer
+
+    clock = FakeClock()
+    pacer = QuotaPacer(100, clock=clock, sleep=clock.sleep)
+    for _ in range(5):
+        pacer.take(20)  # 100 units: fits
+    assert clock.slept == []
+    clock.now = 10
+    pacer.take(20)  # would be 120 in the last minute: wait until the first falls out
+    assert clock.slept == [50] and pacer.waited == 50
+
+
+def test_pacer_allows_a_single_oversized_request():
+    from jev_gmail_filter.gmail import QuotaPacer
+
+    pacer = QuotaPacer(10, sleep=lambda s: (_ for _ in ()).throw(AssertionError("slept")))
+    pacer.take(50)
+
+
+def test_every_call_is_paced():
+    stub = StubService()
+    s = source(stub)
+    s.add_labels("m1", ["Jobs"])
+    list(s.search("q"))
+    # labels.list 1 + modify 5 + two search pages 5 each
+    assert sum(u for _, u in s.pacer._spent) == 1 + 5 + 10

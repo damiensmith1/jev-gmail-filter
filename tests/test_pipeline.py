@@ -207,7 +207,14 @@ def test_label_errors_are_reported_not_fatal(store, topics, fake_judge):
 def test_candidates_include_known_item_values(pipeline, mail, fake_judge):
     mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=2)
     pipeline.sync()
-    mail.deliver(email("b", "[jobs] Update", "cat=interview item=1", sender="x <x@example.com>"))
+    mail.deliver(
+        email(
+            "b",
+            "[jobs] Update",
+            "cat=interview item=1 from the acme team",
+            sender="x <x@example.com>",
+        )
+    )
     pipeline.sync()
     company_qs = [
         qs["Jobs/fields/company"] for _, qs in fake_judge.calls if "Jobs/fields/company" in qs
@@ -226,3 +233,39 @@ def test_date_is_iso_in_store(pipeline, mail, store):
     pipeline.sync()
     [job] = store.items("Jobs")
     assert datetime.fromisoformat(job.last_email_at).tzinfo == UTC
+
+
+def test_first_sync_uses_the_backscan_window_chosen_at_setup(pipeline, mail, store):
+    mail.emails["old"] = email("old", "[jobs] Acme", "cat=applied Acme", days_ago=20)
+    mail.emails["new"] = email("new", "[jobs] Acme 2", "cat=applied Acme", days_ago=2)
+    store.set_meta("backscan_days", "7")
+    assert pipeline.sync().scanned == 1
+
+
+def test_gmail_error_stops_cleanly_and_resumes(store, topics, fake_judge):
+    class Limited(FakeMail):
+        calls = 0
+
+        def get(self, message_id):
+            Limited.calls += 1
+            if Limited.calls == 2:
+                raise RuntimeError("Quota exceeded for quota metric 'Total Query Cost'")
+            return super().get(message_id)
+
+    mail = Limited([email(str(i), f"hi {i}", "x", days_ago=3 - i) for i in range(3)])
+    r = Pipeline(store, mail, topics, judge=fake_judge).sync()
+    assert r.judged == 1 and "rate limit reached" in r.stopped
+    assert store.get_meta("history_id") is None
+    r = Pipeline(store, mail, topics, judge=fake_judge).sync()
+    assert r.judged == 2 and r.skipped == 1 and r.stopped is None
+
+
+def test_recheck_reviews_rejudges_with_current_topics(store, mail, topics):
+    fake = judge()
+    fake.script["Jobs/membership"] = 0.5  # everything uncertain at first
+    mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme")
+    Pipeline(store, mail, topics, judge=fake).sync()
+    assert len(store.reviews()) == 1
+    r = Pipeline(store, mail, topics, judge=judge()).recheck_reviews()
+    assert r.judged == 1 and r.matched == {"Jobs": 1}
+    assert store.reviews() == [] and len(store.items("Jobs")) == 1

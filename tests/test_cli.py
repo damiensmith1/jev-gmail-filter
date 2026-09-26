@@ -54,7 +54,7 @@ def test_init_walks_through_everything(tmp_path, monkeypatch, capsys, inbox):
     out = capsys.readouterr().out
     assert code == 0
     assert "Step 1/5" in out and "console.cloud.google.com" in out and "Desktop app" in out
-    assert "In production" in out and "signed in as me@example.com" in out
+    assert "every 7 days" in out and "signed in as me@example.com" in out
     assert "3 emails in your Primary inbox" in out and "estimated Jev cost" in out
     assert "labels off (dry run)" in out and "`jev-gmail-filter labels` turns labels on" in out
     assert (tmp_path / ".env").read_text() == "TYPESAFE_API_KEY=tsk-key\n"

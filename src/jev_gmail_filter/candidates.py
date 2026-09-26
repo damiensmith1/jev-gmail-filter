@@ -163,15 +163,23 @@ STOP = {
 
 
 def extract(email: Email, kind: str | None, known: Iterable[str] = ()) -> list[str]:
-    """Candidates for one field: known values first, then what the email suggests."""
-    found: list[str] = [k for k in known if k]
+    """Candidates for one field.
+
+    What the email itself suggests comes first. Values already stored on the
+    topic's items are added only when the email mentions them: with many
+    items, unmentioned ones would crowd the email's own candidates out of
+    the capped list (and can't be the answer anyway).
+    """
+    found: list[str] = []
     if kind == "org":
         found += orgs(email)
     elif kind == "title":
         found += titles(email)
     elif kind == "email":
         found += re.findall(r"[\w.+-]+@[\w-]+\.[\w.-]+", f"{email.sender} {email.body}")
-    return _dedupe(found)[:MAX_PER_FIELD]
+    text = f"{email.sender}\n{email.subject}\n{email.body}".casefold()
+    mentioned = [k for k in known if k and k.casefold() in text]
+    return _dedupe(mentioned + found)[:MAX_PER_FIELD]
 
 
 def orgs(email: Email) -> list[str]:

@@ -243,7 +243,9 @@ class Pipeline:
         saved = self.store.get_meta("history_id")
         if since is not None or saved is None:
             start = self.source.history_id()
-            after = since or datetime.now(UTC) - DEFAULT_BACKSCAN
+            chosen = self.store.get_meta("backscan_days")  # the window picked at setup
+            window = timedelta(days=float(chosen)) if chosen else DEFAULT_BACKSCAN
+            after = since or datetime.now(UTC) - window
             ids = list(reversed(list(self.source.search(primary_query(after)))))  # oldest first
             new_history = start
         else:
@@ -263,7 +265,14 @@ class Pipeline:
         for n, gmail_id in enumerate(ids, 1):
             report.scanned += 1
             try:
-                self.process(self.source.get(gmail_id), report)
+                email = self.source.get(gmail_id)
+            except Exception as e:  # e.g. Gmail's rate limit, after its own retries
+                report.stopped = (
+                    f"Gmail refused a request ({_short(e)}); run sync again to continue"
+                )
+                break
+            try:
+                self.process(email, report)
             except jf.BudgetExceeded as e:
                 report.stopped = f"spend cap reached ({e}); run sync again to continue"
                 break
@@ -341,6 +350,28 @@ class Pipeline:
             outcome += f" (warning: {report.errors[0]})"
         return outcome
 
+    def recheck_reviews(self, progress: Any = None) -> SyncReport:
+        """Judge every email in the review queue again, with the current code and
+        topics (e.g. after a fix or a topic edit). Answers you already gave stay."""
+        report = SyncReport()
+        ids = list(dict.fromkeys(r.gmail_id for r in self.store.reviews()))
+        for n, gmail_id in enumerate(ids, 1):
+            report.scanned += 1
+            try:
+                email = self.source.get(gmail_id)
+            except Exception as e:
+                report.stopped = f"Gmail refused a request ({_short(e)}); try again"
+                break
+            self.store.forget(gmail_id)
+            try:
+                self.process(email, report)
+            except (jf.BudgetExceeded, jf.JudgeError) as e:
+                report.stopped = f"{e}; try again"
+                break
+            if progress:
+                progress(n, len(ids))
+        return report
+
     def apply_labels_to_matches(self) -> int:
         """Label every email already judged a match (e.g. after a dry run)."""
         report = SyncReport()
@@ -358,3 +389,10 @@ def _as_match(suggestion: dict[str, Any]) -> jf.TopicResult:
     tr = jf.TopicResult.from_dict(suggestion)
     tr.outcome = "match"
     return tr
+
+
+def _short(error: Exception) -> str:
+    text = str(error)
+    if "Quota exceeded" in text or "rateLimitExceeded" in text:
+        return "rate limit reached; wait a minute"
+    return text[:160]
