@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS reviews (
     resolved_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS item_events (
+    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id  INTEGER NOT NULL REFERENCES items(id),
+    at       TEXT NOT NULL,
+    kind     TEXT NOT NULL,       -- 'created' | 'status' | 'manual'
+    status   TEXT,
+    gmail_id TEXT
+);
+CREATE INDEX IF NOT EXISTS item_events_at ON item_events(at);
+
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -265,6 +275,186 @@ class Store:
             "SELECT COUNT(*) FROM reviews WHERE topic = ? AND resolved = 0", (topic,)
         ).fetchone()[0]
         return {"matches": row[0] or 0, "last_match": row[1], "reviews": reviews}
+
+    # -- queries for the web UI ----------------------------------------------
+
+    def email(self, gmail_id: str) -> dict[str, Any] | None:
+        row = self._db.execute("SELECT * FROM emails WHERE gmail_id = ?", (gmail_id,)).fetchone()
+        return dict(row) if row else None
+
+    def results_for(self, gmail_id: str) -> list[dict[str, Any]]:
+        """The latest result per topic for one email (jevfilter TopicResult dicts)."""
+        rows = self._db.execute(
+            "SELECT topic, data FROM results WHERE gmail_id = ? ORDER BY created_at",
+            (gmail_id,),
+        )
+        latest: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            latest[r["topic"]] = json.loads(r["data"])
+        return list(latest.values())
+
+    def email_page(
+        self,
+        *,
+        kind: str = "all",
+        topic: str | None = None,
+        search: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Emails newest first, each with its per-topic outcomes. `kind`: all | matched |
+        review | other (judged, no topic)."""
+        where, args = [], []
+        if kind == "matched":
+            where.append(
+                "EXISTS (SELECT 1 FROM results r WHERE r.gmail_id = e.gmail_id "
+                "AND r.outcome = 'match')"
+            )
+        elif kind == "review":
+            where.append(
+                "EXISTS (SELECT 1 FROM reviews v WHERE v.gmail_id = e.gmail_id AND v.resolved = 0)"
+            )
+        elif kind == "other":
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM results r WHERE r.gmail_id = e.gmail_id "
+                "AND r.outcome != 'no')"
+            )
+        if topic:
+            where.append(
+                "EXISTS (SELECT 1 FROM results r WHERE r.gmail_id = e.gmail_id "
+                "AND r.topic = ? AND r.outcome = 'match')"
+            )
+            args.append(topic)
+        if search.strip():
+            where.append("(e.subject LIKE ? OR e.sender LIKE ?)")
+            args += [f"%{search.strip()}%"] * 2
+        sql = "SELECT e.* FROM emails e"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY e.received_at DESC LIMIT ? OFFSET ?"
+        out = []
+        for e in self._db.execute(sql, (*args, limit, offset)).fetchall():
+            outcomes = {}
+            for r in self._db.execute(
+                "SELECT topic, outcome, category, p FROM results WHERE gmail_id = ? "
+                "ORDER BY created_at",
+                (e["gmail_id"],),
+            ):
+                outcomes[r["topic"]] = {
+                    "outcome": r["outcome"],
+                    "category": r["category"],
+                    "p": r["p"],
+                }
+            review = self._db.execute(
+                "SELECT COUNT(*) FROM reviews WHERE gmail_id = ? AND resolved = 0",
+                (e["gmail_id"],),
+            ).fetchone()[0]
+            out.append({**dict(e), "outcomes": outcomes, "in_review": bool(review)})
+        return out
+
+    def count_matched(self) -> int:
+        return self._db.execute(
+            "SELECT COUNT(DISTINCT gmail_id) FROM results WHERE outcome = 'match'"
+        ).fetchone()[0]
+
+    def count_emails(self, *, since: str | None = None) -> int:
+        if since is None:
+            return self.email_count()
+        return self._db.execute(
+            "SELECT COUNT(*) FROM emails WHERE received_at >= ?", (since,)
+        ).fetchone()[0]
+
+    def spend_since(self, since: str) -> float:
+        return self._db.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM results WHERE created_at >= ?", (since,)
+        ).fetchone()[0]
+
+    def match_days(self, topic: str, since: str) -> dict[str, int]:
+        """Matches per day (YYYY-MM-DD, by received date) for a topic since a date."""
+        rows = self._db.execute(
+            "SELECT substr(e.received_at, 1, 10) AS day, COUNT(DISTINCT e.gmail_id) AS n "
+            "FROM results r JOIN emails e ON e.gmail_id = r.gmail_id "
+            "WHERE r.topic = ? AND r.outcome = 'match' AND e.received_at >= ? GROUP BY day",
+            (topic, since),
+        )
+        return {r["day"]: r["n"] for r in rows}
+
+    def recent_matches(self, limit: int = 5) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            "SELECT e.*, r.topic, r.category, r.data FROM results r "
+            "JOIN emails e ON e.gmail_id = r.gmail_id WHERE r.outcome = 'match' "
+            "ORDER BY e.received_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [
+            {**{k: r[k] for k in r.keys() if k != "data"}, "result": json.loads(r["data"])}
+            for r in rows
+        ]
+
+    def flagged_matches(self, flag_hint: str, since: str) -> list[dict[str, Any]]:
+        """Recent matched emails where a flag whose name contains `flag_hint` is yes."""
+        out = []
+        for m in self._db.execute(
+            "SELECT e.*, r.topic, r.data FROM results r JOIN emails e ON e.gmail_id = r.gmail_id "
+            "WHERE r.outcome = 'match' AND e.received_at >= ? ORDER BY e.received_at DESC",
+            (since,),
+        ):
+            flags = json.loads(m["data"]).get("flags") or {}
+            if any(flag_hint in name and p >= 0.5 for name, p in flags.items()):
+                out.append({k: m[k] for k in m.keys() if k != "data"})
+        return out
+
+    def add_event(
+        self,
+        item_id: int,
+        kind: str,
+        status: str | None,
+        gmail_id: str | None = None,
+        at: str | None = None,
+    ) -> None:
+        self._db.execute(
+            "INSERT INTO item_events(item_id, at, kind, status, gmail_id) VALUES (?, ?, ?, ?, ?)",
+            (item_id, at or now(), kind, status, gmail_id),
+        )
+
+    def item_events(self, item_id: int) -> list[dict[str, Any]]:
+        rows = self._db.execute(
+            "SELECT * FROM item_events WHERE item_id = ? ORDER BY at, id", (item_id,)
+        )
+        return [dict(r) for r in rows]
+
+    def events_since(self, since: str) -> list[dict[str, Any]]:
+        """Status changes since a date, newest first, with the item's topic and fields."""
+        rows = self._db.execute(
+            "SELECT ev.*, i.topic, i.fields FROM item_events ev JOIN items i ON i.id = ev.item_id "
+            "WHERE ev.at >= ? AND ev.kind IN ('status', 'manual', 'created') "
+            "ORDER BY ev.at DESC, ev.id DESC",
+            (since,),
+        )
+        return [{**dict(r), "fields": json.loads(r["fields"])} for r in rows]
+
+    def unlink(self, gmail_id: str, topic: str) -> None:
+        """Detach an email from its items in a topic (after a correction)."""
+        self._db.execute(
+            "DELETE FROM item_emails WHERE gmail_id = ? AND item_id IN "
+            "(SELECT id FROM items WHERE topic = ?)",
+            (gmail_id, topic),
+        )
+
+    def set_outcome(self, gmail_id: str, topic: str, outcome: str, reason: str) -> None:
+        """Record a person's correction on the stored result."""
+        for r in self._db.execute(
+            "SELECT topic_version, data FROM results WHERE gmail_id = ? AND topic = ?",
+            (gmail_id, topic),
+        ).fetchall():
+            data = json.loads(r["data"])
+            data["outcome"] = outcome
+            data["reasons"] = [reason]
+            self._db.execute(
+                "UPDATE results SET outcome = ?, data = ? WHERE gmail_id = ? AND topic = ? "
+                "AND topic_version = ?",
+                (outcome, json.dumps(data), gmail_id, topic, r["topic_version"]),
+            )
 
     def email_count(self) -> int:
         return self._db.execute("SELECT COUNT(*) FROM emails").fetchone()[0]

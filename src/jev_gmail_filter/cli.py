@@ -71,6 +71,7 @@ def _parser() -> argparse.ArgumentParser:
 
     ui = sub.add_parser("ui", help="open the web UI (setup wizard on first run)")
     ui.add_argument("--port", type=int, default=8501)
+    ui.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
     ui.set_defaults(run=cmd_ui)
 
     s = sub.add_parser("sync", help="judge new Primary-inbox mail")
@@ -215,53 +216,36 @@ def _connect(settings: Settings) -> MailSource:
 
 def cmd_ui(args: argparse.Namespace, settings: Settings) -> int:
     """Start the web UI on this computer and open it in the browser."""
-    import subprocess
+    import threading
     import urllib.request
     import webbrowser
 
-    app = Path(__file__).with_name("app.py")
+    import uvicorn
+
+    from .web.app import create_app
+
+    settings.ensure()
     url = f"http://localhost:{args.port}"
-    env = {**os.environ, "JGF_DATA_DIR": str(settings.data_dir)}
-    cmd = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app),
-        "--server.address",
-        "127.0.0.1",  # only this computer can reach it
-        "--server.port",
-        str(args.port),
-        "--server.headless",
-        "true",  # no Streamlit sign-up prompt; we open the browser
-        "--browser.gatherUsageStats",
-        "false",
-        "--global.developmentMode",
-        "false",
-        "--logger.level",
-        "warning",
-        "--client.toolbarMode",
-        "minimal",  # hides Streamlit's "Deploy" button; this app is local only
-    ]
-    # Streamlit's own banner prints a 127.0.0.1 URL and tips; show only ours (errors still show).
-    server = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL)
-    try:
-        for _ in range(100):  # wait up to ~20s for the server to answer
+
+    def open_when_ready() -> None:
+        for _ in range(100):
             try:
-                urllib.request.urlopen(f"{url}/_stcore/health", timeout=1)
+                urllib.request.urlopen(url + "/static/app.css", timeout=1)
                 break
             except OSError:
-                if server.poll() is not None:
-                    return server.returncode or 1
                 time.sleep(0.2)
         print(f"jev-gmail-filter is running at {url} (on this computer only).", flush=True)
         print("Press Ctrl-C here to stop it.", flush=True)
-        webbrowser.open(url)
-        return server.wait()
-    except KeyboardInterrupt:
-        server.terminate()
-        server.wait()
-        return 0
+        if not args.no_browser:
+            webbrowser.open(url)
+
+    threading.Thread(target=open_when_ready, daemon=True).start()
+    app = create_app(settings)
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+    finally:
+        app.state.runtime.stop()
+    return 0
 
 
 # -- everyday commands -------------------------------------------------------------------

@@ -44,10 +44,16 @@ topics, and the SQLite database.
 
 ## Use
 
-In the web UI (`uv run jev-gmail-filter ui`): an overview with **Sync
-now**, the **Review** queue, your tracked **Items** as a board per status,
-recent **Emails**, **Topics** (edit, add, rescan) and **Settings** (labels,
-spend cap, auto-sync, which Gmail categories to read, sign out).
+In the web UI (`uv run jev-gmail-filter ui`, served on localhost only):
+
+- **Overview** — what's new, what needs you, topic activity, and a
+  "Today" pane with replies you owe and anything that's gone quiet
+- **Needs you** — the emails jevfilter wasn't sure about, answered in a click
+- **Everything** — every judged email, filterable, with the verdict and a
+  one-click correction when it got something wrong
+- **Items** — tracked things (jobs, orders) as a board or list
+- **Topics** — plain-English topic editor with **Try it** on a real email
+- **Settings** — labels, spend cap, auto-sync, which Gmail categories to read
 
 Or from the terminal:
 

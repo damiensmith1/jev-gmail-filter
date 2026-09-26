@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Everything{% endblock %}
+{% macro q(kind=None, topic=None, offset=None, selected=None) -%}
+/emails?{{ {"kind": kind if kind is not none else d.kind, "topic": topic if topic is not none else d.topic, "q": d.search, "offset": offset if offset is not none else d.offset, "selected": selected} | dictsort | selectattr(1) | list | urlencode }}
+{%- endmacro %}
+{% block main %}
+<header class="page-head">
+  <div><h1>Everything</h1><div class="sub">{{ d.counts.all }} emails judged · reading {{ nav.reading }}</div></div>
+  <form class="search" method="get" action="/emails" role="search">
+    {{ icon("search", 15) }}
+    <input type="hidden" name="kind" value="{{ d.kind }}"><input type="hidden" name="topic" value="{{ d.topic }}">
+    <input name="q" value="{{ d.search }}" placeholder="Search subject or sender" aria-label="Search emails">
+  </form>
+</header>
+<nav class="chips" aria-label="Filters">
+  <a class="filter" href="{{ q('all', '', 0) }}" {% if d.kind == 'all' and not d.topic %}aria-current="page"{% endif %}>All <span class="meta" style="color: inherit">{{ d.counts.all }}</span></a>
+  <a class="filter" href="{{ q('matched', '', 0) }}" {% if d.kind == 'matched' and not d.topic %}aria-current="page"{% endif %}>Matched</a>
+  <a class="filter" href="{{ q('review', '', 0) }}" {% if d.kind == 'review' %}aria-current="page"{% endif %}>Needs you <span class="meta" style="color: inherit">{{ d.counts.review }}</span></a>
+  <a class="filter" href="{{ q('other', '', 0) }}" {% if d.kind == 'other' %}aria-current="page"{% endif %}>Not in a topic</a>
+  {% for t in d.topic_names %}<a class="filter" href="{{ q('matched', t, 0) }}" {% if d.topic == t %}aria-current="page"{% endif %}>{{ t }}</a>{% endfor %}
+</nav>
+<div data-nav-list>
+  {% for m in d.rows %}
+  <a class="email-row {{ 'dim' if m.tone == 'none' }}" href="{{ q(selected=m.gmail_id) }}" {% if m.gmail_id == d.selected %}aria-current="true"{% endif %}>
+    <span class="from ellipsis">{{ m.from }}</span>
+    <span class="subject ellipsis">{{ m.subject or "(no subject)" }}</span>
+    <span class="small ellipsis tone-{{ m.tone }}">{{ m.tag }}</span>
+    <span class="meta" style="text-align: right">{{ m.time }}</span>
+  </a>
+  {% else %}
+  <div class="empty">No emails here{% if d.search %} matching “{{ d.search }}”{% endif %}.</div>
+  {% endfor %}
+</div>
+<div class="row">
+  {% if d.offset %}<a class="btn" href="{{ q(offset=[d.offset - d.page, 0] | max) }}">Newer</a>{% endif %}
+  {% if d.more %}<a class="btn" href="{{ q(offset=d.offset + d.page) }}">Older</a>{% endif %}
+</div>
+{% endblock %}
+
+{% block pane %}
+{% set x = d.detail %}
+{% if x %}
+<aside class="pane" aria-label="Selected email">
+  <div>
+    <div class="small muted">{{ x.sender }} · {{ x.when }}</div>
+    <h2 style="font-size: 22px; margin-top: 6px; line-height: 1.25">{{ x.subject or "(no subject)" }}</h2>
+  </div>
+  {% for v in x.verdicts %}
+  <div class="card card-pad stack" style="background: var(--raised)">
+    <div class="row"><span class="chip chip-good">{{ v.topic }}</span>{% if v.category %}<span style="font-weight: 500">{{ v.category }}</span>{% endif %}<span class="grow"></span><span class="meta">{{ pct(v.p) }} sure</span></div>
+    {% if v.fields or v.flags or v.labels %}
+    <div class="kv">
+      {% for k, val in v.fields.items() %}<span>{{ k | capitalize }}</span><span>{{ val }}</span>{% endfor %}
+      {% for k, p in v.flags.items() %}<span>{{ k | replace("_", " ") | capitalize }}</span><span>{{ "Yes" if p >= 0.5 else "No" }} <span class="meta">{{ pct(p) }}</span></span>{% endfor %}
+      {% if v.labels %}<span>Labels</span><span>{{ v.labels | join(", ") }}</span>{% endif %}
+    </div>
+    {% endif %}
+    <form method="post" action="/emails/{{ x.gmail_id }}/wrong"><input type="hidden" name="topic" value="{{ v.topic }}"><button class="btn btn-quiet" style="padding-left: 0">Not {{ v.topic }}? Remove it</button></form>
+  </div>
+  {% else %}
+  <div class="card card-pad small muted" style="background: var(--raised)">{% if x.corrected %}You removed this from {{ x.corrected | join(", ") }}.{% else %}Not in any topic.{% endif %}</div>
+  {% endfor %}
+  {% if x.others %}
+  <div class="stack" style="gap: 8px">
+    <div class="label">Other topics</div>
+    {% for o in x.others %}<div class="row small"><span class="grow">{{ o.topic }}</span><span class="meta">{{ o.outcome }} · {{ pct(o.p) }}</span></div>{% endfor %}
+  </div>
+  {% endif %}
+  <div class="email-body" style="max-height: 200px">{{ x.snippet }}</div>
+  <div class="grow"></div>
+  <a class="btn btn-primary btn-lg" href="{{ x.thread }}" target="_blank" rel="noopener">Open in Gmail ↗</a>
+</aside>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ editing or "New topic" }}{% endblock %}
+{% block body %}
+<div class="shell">
+  {% include "_nav.html" %}
+  <form method="post" action="/topics/edit" id="topic-form" style="display: contents">
+  {# Enter in a text box presses the first button: make that a harmless refresh. #}
+  <button hidden name="action" value="refresh" tabindex="-1" aria-hidden="true"></button>
+  <main class="main">
+    <input type="hidden" name="path" value="{{ path }}">
+    <input type="hidden" name="version" value="{{ version }}">
+    <input type="hidden" name="label_explicit" value="{{ '1' if explicit else '' }}">
+    <input type="hidden" name="extra_json" value="{{ extra_json }}">
+    <header class="page-head">
+      <div><div class="small muted"><a href="/topics" class="muted">Topics</a> / {{ editing or "New" }}</div><h1 style="margin-top: 4px">{{ f.name or "New topic" }}</h1></div>
+      <a class="btn btn-quiet" href="/topics">Cancel</a>
+      <button class="btn btn-primary btn-lg" name="action" value="save" {% if problems %}disabled title="Fix the problems first"{% endif %}>Save</button>
+    </header>
+    {% if error %}<div class="banner bad small">{{ error }}</div>{% endif %}
+    {% if problems %}<div class="problems"><b>Before saving:</b><ul>{% for p in problems %}<li>{{ p }}</li>{% endfor %}</ul></div>{% endif %}
+
+    <section class="card card-pad grid-2">
+      <label class="field"><span>Name</span><input class="input" name="name" value="{{ f.name }}" placeholder="Travel"></label>
+      <div class="field"><span>Gmail label</span>
+        <div class="row"><label class="check" style="flex-shrink: 0"><input type="checkbox" name="label_on" value="on" {% if f.gmail_label != "" %}checked{% endif %}><span class="small">Label matches</span></label><input class="input" name="label" value="{{ f.gmail_label if f.gmail_label else f.name }}" aria-label="Label"></div>
+      </div>
+      <label class="field" style="grid-column: span 2"><span>What belongs</span><textarea class="textarea" name="description" rows="2" placeholder="Flight, hotel and train bookings for my trips, and changes to them.">{{ f.description }}</textarea><span class="hint">Plain English. Be specific about what counts; Jev reads it literally.</span></label>
+      <label class="field"><span>Not this <span class="hint">(one per line)</span></span><textarea class="textarea" name="exclude" rows="2" placeholder="Travel deals and newsletters">{{ f.exclude | join("\n") }}</textarea></label>
+      <details class="more field" {% if f.examples_match or f.examples_no %}open{% endif %}>
+        <summary>Examples (optional)</summary>
+        <div class="grid-2" style="margin-top: 6px">
+          <textarea class="textarea" name="ex_match" rows="2" placeholder="Belongs: Your booking is confirmed" aria-label="Examples that belong">{{ f.examples_match | join("\n") }}</textarea>
+          <textarea class="textarea" name="ex_no" rows="2" placeholder="Doesn't: 30% off flights" aria-label="Examples that don't belong">{{ f.examples_no | join("\n") }}</textarea>
+        </div>
+      </details>
+    </section>
+
+    <section class="card table-edit" aria-label="Categories">
+      <div class="card-head"><h3 class="grow">Categories</h3><span class="hint">optional · each match gets exactly one</span></div>
+      {% if "categories" in f.extra %}
+      <div class="card-pad small muted">This topic has nested categories; edit them in the YAML under Advanced.</div>
+      {% else %}
+      {% if f.categories %}<div class="tr head cats label"><span>Name</span><span>What it means</span><span>Examples (; between)</span><span>Not this (; between)</span><span></span></div>{% endif %}
+      {% for c in f.categories %}
+      <div class="tr cats">
+        <input class="input" name="cat-{{ loop.index0 }}-name" value="{{ c.name }}" aria-label="Category name" style="font-family: var(--mono); font-size: 13px">
+        <input class="input" name="cat-{{ loop.index0 }}-desc" value="{{ c.description }}" aria-label="What it means">
+        <input class="input" name="cat-{{ loop.index0 }}-examples" value="{{ c.examples | join('; ') }}" aria-label="Examples">
+        <input class="input" name="cat-{{ loop.index0 }}-not" value="{{ c.exclude }}" aria-label="Not this">
+        <button class="btn btn-quiet" name="action" value="del-cat-{{ loop.index0 }}" aria-label="Remove category">{{ icon("x", 14) }}</button>
+      </div>
+      {% endfor %}
+      <div style="padding: 8px 12px"><button class="btn btn-quiet" name="action" value="add-cat">+ Add category</button></div>
+      {% endif %}
+    </section>
+
+    <div class="grid-2" style="align-items: start">
+      <section class="card table-edit" aria-label="Details to pull out">
+        <div class="card-head"><h3 class="grow">Details to pull out</h3><span class="hint">picked from the email, never made up</span></div>
+        {% for x in f.fields %}
+        <div class="tr fieldrows" style="grid-template-columns: 110px 90px minmax(0, 1fr) 30px">
+          <input class="input" name="field-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Name" style="font-family: var(--mono); font-size: 13px">
+          <select class="select" name="field-{{ loop.index0 }}-kind" aria-label="Kind">{% for k in kinds %}<option {% if k == x.kind %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
+          <input class="input" name="field-{{ loop.index0 }}-about" value="{{ x.about }}" aria-label="What it is" placeholder="What it is">
+          <button class="btn btn-quiet" name="action" value="del-field-{{ loop.index0 }}" aria-label="Remove">{{ icon("x", 14) }}</button>
+          <label class="check small" style="grid-column: 1 / -1; margin-top: -2px"><input type="checkbox" name="field-{{ loop.index0 }}-required" value="on" {% if x.required %}checked{% endif %}>Required: if it can't be found, the email goes to Needs you</label>
+        </div>
+        {% endfor %}
+        <div style="padding: 8px 12px"><button class="btn btn-quiet" name="action" value="add-field">+ Add detail</button></div>
+      </section>
+
+      <section class="card table-edit" aria-label="Yes/no flags">
+        <div class="card-head"><h3 class="grow">Yes/no flags</h3><span class="hint">e.g. needs_reply</span></div>
+        {% for x in f.flags %}
+        <div class="tr flagrows" style="grid-template-columns: 120px minmax(0, 1fr) 30px">
+          <input class="input" name="flag-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Flag name" style="font-family: var(--mono); font-size: 13px">
+          <input class="input" name="flag-{{ loop.index0 }}-statement" value="{{ x.statement }}" aria-label="True when" placeholder="True when…">
+          <button class="btn btn-quiet" name="action" value="del-flag-{{ loop.index0 }}" aria-label="Remove">{{ icon("x", 14) }}</button>
+        </div>
+        {% endfor %}
+        <div style="padding: 8px 12px"><button class="btn btn-quiet" name="action" value="add-flag">+ Add flag</button></div>
+      </section>
+    </div>
+
+    <section class="card" aria-label="Track as items">
+      <div class="card-head"><h3 class="grow">Track as items</h3><label class="check small"><input type="checkbox" name="track" value="on" {% if f.track %}checked{% endif %}>On</label></div>
+      <div class="card-pad stack">
+        <div class="hint">Group matching emails into items (a job, an order) that move through statuses as emails arrive, and flag the ones that go quiet.</div>
+        {% if f.track %}
+        <div class="grid-2">
+          <div class="field"><span>Same item when these match</span><div class="chips">{% for x in f.fields %}<label class="check small"><input type="checkbox" name="match_on" value="{{ x.name }}" {% if x.name in f.track.match_on %}checked{% endif %}>{{ x.name }}</label>{% else %}<span class="hint">Add a detail first (e.g. company).</span>{% endfor %}</div></div>
+          <label class="field"><span>Gone quiet after (days, 0 = never)</span><input class="input" type="number" name="stale" min="0" max="365" value="{{ f.track.stale_after_days or 0 }}" style="width: 120px"></label>
+        </div>
+        <div class="table-edit" style="border: 1px solid var(--line); border-radius: var(--radius)">
+          <div class="tr head statusrows label"><span>Status</span><span>Moved by categories (, between)</span><span>Closed</span><span></span></div>
+          {% for s in f.track.statuses %}
+          <div class="tr statusrows">
+            <input class="input" name="status-{{ loop.index0 }}-name" value="{{ s.name }}" aria-label="Status">
+            <input class="input" name="status-{{ loop.index0 }}-moved" value="{{ s.categories | join(', ') }}" aria-label="Moved by categories">
+            <label class="check"><input type="checkbox" name="status-{{ loop.index0 }}-closed" value="on" {% if s.closed %}checked{% endif %} aria-label="Closed"></label>
+            <button class="btn btn-quiet" name="action" value="del-status-{{ loop.index0 }}" aria-label="Remove">{{ icon("x", 14) }}</button>
+          </div>
+          {% endfor %}
+          <div style="padding: 8px 12px"><button class="btn btn-quiet" name="action" value="add-status">+ Add status</button></div>
+        </div>
+        <div class="hint">Statuses in order. Closed ones (like rejected) apply from any stage.</div>
+        {% else %}
+        <button class="btn" name="action" value="add-status" style="align-self: flex-start" onclick="this.form.track.checked = true">Turn on tracking</button>
+        {% endif %}
+      </div>
+    </section>
+
+    <details class="more card card-pad">
+      <summary>Advanced: thresholds and YAML</summary>
+      <div class="stack" style="margin-top: 12px">
+        <div class="grid-3">
+          <label class="field"><span>“Yes” at or above</span><input class="input" type="number" step="0.05" min="0" max="1" name="th_accept" value="{{ f.thresholds.accept }}"></label>
+          <label class="field"><span>“No” below</span><input class="input" type="number" step="0.05" min="0" max="1" name="th_reject" value="{{ f.thresholds.reject }}"></label>
+          <label class="field"><span>Category / detail confidence</span><input class="input" type="number" step="0.05" min="0" max="1" name="th_conf" value="{{ f.thresholds.min_confidence }}"></label>
+        </div>
+        <div class="hint">Between “no” and “yes”, emails go to Needs you.</div>
+        {% if f.advanced_keys %}<div class="hint">This topic also uses {{ f.advanced_keys | join(", ") }}, editable in YAML.</div>{% endif %}
+        <textarea class="textarea" name="yaml" rows="14" style="font-family: var(--mono); font-size: 12px" aria-label="YAML">{{ yaml_text }}</textarea>
+        <div><button class="btn" name="action" value="apply-yaml">Apply YAML to the form</button></div>
+      </div>
+    </details>
+  </main>
+
+  <aside class="pane" aria-label="Try it">
+    <div><div class="label">Try it before saving</div><div class="small muted" style="margin-top: 4px">Runs this unsaved version on one email. Nothing is saved or labelled.</div></div>
+    <label class="field"><span>A recent email</span>
+      <select class="select" name="try_email"><option value="">— or paste one below —</option>{% for e in recent %}<option value="{{ e.id }}" {% if e.id == try_email %}selected{% endif %}>{{ e.label }}</option>{% endfor %}</select>
+    </label>
+    <label class="field"><span>Or paste an email</span><textarea class="textarea" name="try_text" rows="4" placeholder="Subject on the first line, then the body">{{ try_text }}</textarea></label>
+    <button class="btn btn-primary" name="action" value="try" {% if problems %}disabled{% endif %}>Test</button>
+    {% if try_result %}
+    {% set r = try_result %}
+    <div class="card card-pad stack" style="background: var(--raised)">
+      <div class="row">
+        {% if r.outcome == "match" %}<span class="chip chip-good">Belongs</span>{% elif r.outcome == "review" %}<span class="chip chip-warn">Unsure</span>{% else %}<span class="chip">Doesn't belong</span>{% endif %}
+        <span class="grow"></span><span class="meta">{{ pct(r.p) }}</span>
+      </div>
+      <div class="kv">
+        {% if r.category %}<span>Category</span><span>{{ r.category }} <span class="meta">{{ pct(r.category_p) }}</span></span>{% endif %}
+        {% for k, v in r.fields.items() %}<span>{{ k | capitalize }}</span><span>{{ v or "— not found" }}</span>{% endfor %}
+        {% for k, p in r.flags.items() %}<span>{{ k | replace("_", " ") | capitalize }}</span><span>{{ "yes" if p >= 0.5 else "no" }} <span class="meta">{{ pct(p) }}</span></span>{% endfor %}
+      </div>
+      {% if r.reasons and r.outcome != "match" %}<div class="hint">Why: {{ r.reasons | join(", ") }}</div>{% endif %}
+      <div class="meta">{{ money(r.cost) }}</div>
+    </div>
+    {% endif %}
+  </aside>
+  </form>
+</div>
+{% if flash %}<div class="flash" role="status">{{ flash }}</div>{% endif %}
+{% endblock %}

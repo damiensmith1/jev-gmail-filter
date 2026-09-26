@@ -249,9 +249,12 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
   labels, review queue; sync; stale refresh; resolving reviews
 - `onboarding.py` — the setup steps, shared by `init` and the UI wizard
 - `topic_form.py` — topic ↔ editor form (pure, round-trips exactly), starters
-- `topics_ui.py` — the Topics page and editor
-- `cli.py` — `ui`, `init`, `sync`, `watch`, `review`, `items`, `labels`, `status`
-- `app.py` — the Streamlit web UI (below)
+- `cli.py` — `ui`, `init`, `sync`, `watch`, `review`, `items`, `labels`,
+  `categories`, `status`
+- `web/` — the web UI (below): `app.py` (routes, local-only middleware),
+  `runtime.py` (background scans, sign-in, auto-sync timer, email cache),
+  `views.py` (page data, no HTTP), `templates/` (Jinja), `static/`
+  (`app.css` with the design tokens, a small `app.js`)
 
 `topics/examples/` ships sample topics; `init` copies the chosen ones into
 `data/topics/`, where the user edits them.
@@ -287,52 +290,86 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 
 ## Web UI
 
-`jev-gmail-filter ui` runs Streamlit on 127.0.0.1 only. Until setup is
-done it shows the wizard, the same five steps as `init`: API key (saved to
-`.env`), the user's own OAuth client (numbered Google Cloud steps, then
-**upload** the downloaded JSON, validated as a Desktop client), **Sign in
-with Google** (the browser consent flow; the wizard explains the
-"unverified app" screen), starter topics as checkboxes, and the backscan
-window with email count and cost estimate, dry run by default, then a
-progress bar. After setup, pages:
+`jev-gmail-filter ui` serves a local web app on 127.0.0.1 and opens it
+in the browser. It's **FastAPI + server-rendered Jinja templates + one
+CSS file**, with a few lines of plain JavaScript (live scan progress,
+sign-in polling, auto-submitting selects, the file drop zone, j/k list
+navigation). No Node toolchain: the open-source setup stays `uv sync`.
+Every action is a normal form POST that redirects back, so the pages work
+without JavaScript.
 
-Scans (first scan, Sync now, Rescan, auto-sync) run on a background
-thread, one at a time, so refreshing or switching pages doesn't stop
-them; every page shows live progress and then the result. Streamlit's
-"Deploy" button is hidden (`client.toolbarMode minimal`): the app is
-local only.
+### Design language: "Sage"
 
-- **Overview** — counts, spend, last sync, **Sync now**; optional auto-sync
-  every N minutes while the page is open (`watch` is the always-on option)
-- **Review** — a card per uncertain email: Yes / No, or pick the item (or new)
-- **Items** — per tracked topic, a column per status; stale items flagged;
-  details (linked emails, manual status change, notes); add an item by hand
-- **Emails** — recent emails with the topics and categories they matched
-- **Topics** — a card per topic (what it's about, what it pulls out,
-  label, matches, last match, open reviews) with Edit / Delete, and **New
-  topic** from blank, a quick starter (Travel, Bills, School, Orders) or a
-  shipped example. The editor is a form in plain words, mapped to the
-  jevfilter format by `topic_form.py`: name, "What belongs", "Not this",
-  examples; tables for categories (with examples / not-this), "Details to
-  pull out" (fields: kind, required), yes/no flags; "Track as items"
-  (match on, statuses with the categories that move them, closed
-  statuses, gone-quiet days); Gmail label; Advanced (threshold sliders and
-  raw YAML, which can be applied back to the form). Parts the form doesn't
-  cover (scores, `when`, nested categories, custom facets) are kept as-is.
-  Problems are shown in plain language and block Save. **Try it** runs the
-  unsaved topic on a recent email or pasted text (one Jev call, nothing
-  saved). Saving an unchanged topic keeps its version exactly; a changed
-  or new topic offers a rescan.
-- **Settings** — labels on/off (turning on labels past matches), spend cap
-  per sync, auto-sync interval, which Gmail categories to read (with
-  per-category counts on request and a rescan offer when categories are
-  added), sign out
+Calm and minimal, light, balanced density. Tokens (CSS variables in
+`static/app.css`): ground `#F5F7F5`, surface `#FFFFFF`, line `#DDE5E0`,
+ink `#152019`, muted `#52605A`, one accent deep teal `#0E6B5C`, warn
+`#94560F`; radius 6 px. Type: Instrument Sans for UI and headings, Geist
+Mono for numbers, times, costs and metadata. The fonts are meant to be
+bundled in `static/fonts/` (both OFL), never loaded from Google, so the
+app makes no third-party requests; until they're added the CSS falls back
+to the system sans and monospace. Mockups: the "jev-gmail-filter design
+language" canvas (Explorations: three layouts × four directions; Chosen
+direction: the screens below in Paper and Sage; Sage chosen).
+
+### Layout
+
+The inbox shell: a side nav (Overview, Needs you with a count, Everything,
+Items; topics with match counts; sync status, spend and **Sync now**;
+Settings, flagged "dry run" while labels are off), the main column, and a
+right-hand context pane.
+
+- **Overview** (home) — greeting and what's new; stat tiles (needs you,
+  new this week out of all judged, tracked items, gone quiet); the Needs you queue with
+  one-click answers; a card per topic with 14-day activity bars; latest
+  matches. Pane: **Today** — replies you owe (matches whose reply-flag is
+  yes, when a topic has one), items gone quiet, items that moved this week.
+- **Needs you** — the review cards. Pane: the email itself (fetched from
+  Gmail), Jev's confidence against the topic's thresholds, what it would
+  do on "yes", and the answer (Yes / No, or which item / new).
+- **Everything** — all judged mail with filters (all, matched, needs you,
+  not in a topic, per topic), search, paging. Pane: the verdict per
+  matched topic (category, details, flags, labels), other topics' scores,
+  **Not &lt;topic&gt;? Remove it** (a correction: labels removed, email
+  detached from its item, result marked `user_corrected`), Open in Gmail.
+- **Items** — secondary view: per tracked topic, a board (a column per
+  pipeline status; closed statuses behind a toggle) or a list. Pane: the
+  item (stage progress, linked emails, notes, status change), or "add an
+  item by hand".
+- **Topics** — cards (description, what it pulls out, tracking, label,
+  matches, last match, reviews) with Edit / See emails / Delete; **New
+  topic** from blank, a starter or an example; rescan. The **editor** is
+  the plain-words form (`topic_form.py`), round-tripped through the
+  server on every action (add / remove rows, apply YAML, Try it), so it
+  needs no client state. Problems block Save; an unchanged Save leaves the
+  file untouched; a changed topic offers a rescan. Pane: **Try it** on a
+  recent or pasted email.
+- **Settings** — labels (turning on labels past matches), spend cap per
+  sync, auto-sync interval, Gmail categories (with counts on request),
+  account and sign out.
+- **Setup** (until done) — a stepper and one card per step: API key, the
+  Google client (numbered steps, Console link, drop the JSON), Sign in
+  with Google (runs in the background while the page waits), topics,
+  backscan window with count and cost estimate, dry run by default.
+
+### Behaviour
+
+- Scans (first scan, Sync now, Rescan, Re-check, auto-sync) run one at a
+  time on a background thread (`Runtime`); every page shows live progress,
+  then a result banner until dismissed.
+- Auto-sync runs in the server (every N minutes from Settings) while the
+  app is open; after a failed or partial attempt it waits a full interval.
+- Security: the app can read Gmail, so it answers only requests addressed
+  to localhost (blocks DNS rebinding) and refuses POSTs whose Origin or
+  Referer is another site (blocks other websites driving it).
+- Item history (`item_events`: created, status, manual) feeds "moved this
+  week" and the item timeline.
 
 ## Status
 
 Milestone 1 (CLI end to end) and Milestone 2 (web UI with the setup
-wizard) are built. UI tests drive the whole wizard and every page
-headlessly. Tested with a fake Gmail and a scripted Jev (no network); checked end
+wizard, rebuilt on FastAPI in the Sage design) are built. Web tests drive
+the wizard and every page and action through FastAPI's test client; every
+page also renders against a real data folder. Tested with a fake Gmail and a scripted Jev (no network); checked end
 to end against real Jev with a fake inbox (6 realistic emails: all
 classified correctly, the follow-up linked to the right job, $0.00036).
 Not yet run against a real Gmail account.
@@ -359,8 +396,11 @@ which cuts cost when most mail matches no topic, and category examples).
 - Candidate extraction for email lives in the app (email-specific).
 - Topics defined as plain-English YAML in `topics/`, editable in the UI.
 - Backscan window chosen by the user during setup.
-- Web UI: Streamlit (fastest for a local tool; the UI only reads/writes
-  SQLite and topic files, so swapping later is cheap).
+- Web UI: FastAPI + Jinja + plain CSS, replacing an earlier Streamlit UI,
+  which couldn't match the chosen design (layout, spacing and widgets are
+  Streamlit's). Server-rendered keeps the project Python-only.
+- Design language "Sage" (chosen from four directions and three layouts):
+  the inbox shell with Overview as home; the board is a secondary view.
 - Jobs example: stale after 21 days; recruiter / HR / hiring-team contact
   matches an existing job or creates a new one (no separate "lead").
 - Everyone, the maintainer included, brings their own Google OAuth client

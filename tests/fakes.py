@@ -91,6 +91,13 @@ class FakeMail:
     def add_labels(self, message_id, names):
         self.labels.setdefault(message_id, []).extend(names)
 
+    def remove_labels(self, message_id, names):
+        kept = [n for n in self.labels.get(message_id, []) if n not in names]
+        if kept:
+            self.labels[message_id] = kept
+        else:
+            self.labels.pop(message_id, None)
+
     def deliver(self, e: Email) -> None:
         self.emails[e.id] = e
         self.pending.append(e.id)

@@ -204,6 +204,7 @@ class Pipeline:
                 status if status in pipeline_statuses else None,
                 last_email_at=when,
             )
+            self.store.add_event(item_id, "created", status, email.id, at=when)
             report.items_created += 1
         else:
             status = track.next_status(topic, item.status, category, last_stage=item.last_stage)
@@ -212,6 +213,8 @@ class Pipeline:
             self.store.update_item(
                 item.id, status=status, last_stage=last_stage, fields=missing, last_email_at=when
             )
+            if status != item.status:
+                self.store.add_event(item.id, "status", status, email.id, at=when)
             item_id = item.id
             report.items_updated += 1
         self.store.link(item_id, email.id, category)
@@ -376,6 +379,41 @@ class Pipeline:
             if progress:
                 progress(n, len(ids))
         return report
+
+    def mark_wrong(self, gmail_id: str, topic_name: str) -> str:
+        """A person says a match is wrong: take the labels off, detach the email from
+        its item, and record the correction (kept for tuning)."""
+        topic = self.topics.get(topic_name)
+        if topic is None:
+            raise ValueError(f"no topic {topic_name!r}")
+        stored = next(
+            (r for r in self.store.results_for(gmail_id) if r["topic"] == topic_name), None
+        )
+        labels = self._labels(topic, jf.TopicResult.from_dict(stored)) if stored else []
+        if labels and self.write_labels:
+            try:
+                self.source.remove_labels(gmail_id, labels)
+            except Exception as e:  # keep the correction even if Gmail refuses
+                return f"corrected, but Gmail kept the labels ({_short(e)})"
+        with self.store.transaction():
+            self.store.unlink(gmail_id, topic_name)
+            self.store.set_outcome(gmail_id, topic_name, "no", "user_corrected")
+            for r in self.store.reviews():
+                if r.gmail_id == gmail_id and r.topic == topic_name:
+                    self.store.resolve_review(r.id, {"decision": "no", "via": "correction"})
+        return f"removed from {topic_name}"
+
+    def set_item_status(self, item_id: int, status: str) -> None:
+        """A person moves an item by hand (recorded in its history)."""
+        item = self.store.item(item_id)
+        if item is None:
+            raise ValueError(f"no item #{item_id}")
+        topic = self.topics.get(item.topic)
+        pipeline_statuses = set(topic.track.statuses) if topic and topic.track else set()
+        last_stage = status if status in pipeline_statuses else item.last_stage
+        with self.store.transaction():
+            self.store.set_item_status(item_id, status, last_stage)
+            self.store.add_event(item_id, "manual", status)
 
     def apply_labels_to_matches(self) -> int:
         """Label every email already judged a match (e.g. after a dry run)."""

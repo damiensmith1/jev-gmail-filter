@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block main %}
+<header class="page-head"><div><h1>Settings</h1><div class="sub">Everything stays on this computer, in <span class="meta">{{ data_dir }}</span>.</div></div></header>
+
+<form method="post" action="/settings" class="card card-pad stack" style="gap: 16px">
+  <h2>Syncing</h2>
+  <label class="check"><input type="checkbox" name="labels" value="on" {% if labels_on %}checked{% endif %}><span><b>Write Gmail labels</b><br><span class="hint">Off is a dry run: emails are judged and stored but not labelled. Turning it on labels everything matched so far.</span></span></label>
+  <div class="grid-2">
+    <label class="field"><span>Spend cap per sync (USD)</span><input class="input" type="number" name="max_usd" step="0.25" min="0.01" value="{{ max_usd }}"><span class="hint">A sync stops before going over; run it again to continue.</span></label>
+    <label class="field"><span>Sync automatically every … minutes</span><input class="input" type="number" name="auto_minutes" min="0" max="1440" value="{{ auto_minutes }}"><span class="hint">0 is off. Runs while this app is open.</span></label>
+  </div>
+  <div><button class="btn btn-primary">Save</button></div>
+</form>
+
+<form method="post" action="/settings/categories" class="card card-pad stack" style="gap: 12px">
+  <div class="row"><h2 class="grow">Which Gmail categories to read</h2><a class="btn" href="/settings?counts=1">Count emails (last 14 days)</a></div>
+  <div class="hint">Gmail sorts your inbox into these even if the tabs are off. Only ticked ones are judged; more categories cost more Jev.</div>
+  {% for c in cats %}
+  <label class="choice"><input type="checkbox" name="cat-{{ c.key }}" value="on" {% if c.on %}checked{% endif %}><span class="grow"><b>{{ c.name }}</b> <span class="muted">— {{ c.help }}</span></span>{% if c.count is not none %}<span class="meta">{{ c.count }}</span>{% endif %}</label>
+  {% endfor %}
+  <div class="row"><button class="btn btn-primary">Save categories</button><span class="hint">After adding one, rescan (Topics page) to include its older mail.</span></div>
+</form>
+
+<section class="card card-pad stack">
+  <h2>Account</h2>
+  <div class="kv"><span>Google</span><span>{{ account or "not signed in" }}</span><span>Client</span><span>{{ project }}</span><span>Jev spend</span><span class="meta">{{ money(total) }} in total</span></div>
+  <form method="post" action="/signout" class="row"><button class="btn">Sign out</button><span class="hint">You can also revoke access at myaccount.google.com/permissions.</span></form>
+</section>
+{% endblock %}

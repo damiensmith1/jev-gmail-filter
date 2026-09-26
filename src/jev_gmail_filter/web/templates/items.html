@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Items{% endblock %}
+{% macro link(selected=None, view=None, closed=None) -%}
+/items?{{ {"topic": d.topic, "view": view or d.view, "closed": (1 if (closed if closed is not none else d.show_closed) else 0), "selected": selected} | dictsort | selectattr(1) | list | urlencode }}
+{%- endmacro %}
+{% block main %}
+{% if not d.topic %}
+<header class="page-head"><div><h1>Items</h1><div class="sub">None of your topics track items yet.</div></div></header>
+<div class="card empty">Turn on “Track as items” in a topic (for example Jobs or Orders) to follow things through stages.<br><br><a class="btn" href="/topics">Open topics</a></div>
+{% else %}
+<header class="page-head">
+  <div><h1>Items</h1><div class="sub">{{ d.topic }} · {{ d.count }} tracked{% if d.quiet %} · {{ d.quiet }} gone quiet{% endif %}</div></div>
+  {% if d.tracked | length > 1 %}
+  <nav class="segmented" aria-label="Topic">{% for t in d.tracked %}<a href="/items?topic={{ t | urlencode }}&amp;view={{ d.view }}" {% if t == d.topic %}aria-current="page"{% endif %}>{{ t }}</a>{% endfor %}</nav>
+  {% endif %}
+  <nav class="segmented" aria-label="View"><a href="{{ link(view='board') }}" {% if d.view == 'board' %}aria-current="page"{% endif %}>Board</a><a href="{{ link(view='list') }}" {% if d.view == 'list' %}aria-current="page"{% endif %}>List</a></nav>
+</header>
+
+{% if d.view == "board" %}
+<div class="board">
+  {% for col in d.columns + (d.closed_cols if d.show_closed else []) %}
+  <section class="column" aria-label="{{ col.name }}">
+    <div class="column-head"><span class="dot t{{ loop.index0 % 4 }}"></span><span class="grow">{{ col.name }}</span><span class="meta">{{ col.cards | length }}</span></div>
+    {% for c in col.cards %}
+    <a class="card item-card" href="{{ link(selected=c.id) }}" {% if d.selected and d.selected.id == c.id %}aria-current="true"{% endif %}>
+      <span style="font-weight: 500" class="ellipsis">{{ c.title }}</span>
+      {% if c.sub %}<span class="small muted ellipsis">{{ c.sub }}</span>{% endif %}
+      <span class="row" style="margin-top: 4px"><span class="meta grow">{{ c.when }}</span>{% if c.stale %}<span class="chip chip-warn">Quiet</span>{% endif %}</span>
+    </a>
+    {% else %}<div class="small muted" style="padding: 4px 2px">Nothing here</div>{% endfor %}
+  </section>
+  {% endfor %}
+</div>
+{% if d.closed_count %}<a class="btn btn-quiet" href="{{ link(closed=not d.show_closed) }}" style="align-self: flex-start; border: 1px dashed var(--line)">{% if d.show_closed %}Hide closed{% else %}Closed · {{ d.closed_count }}{% endif %}</a>{% endif %}
+{% else %}
+<section class="card">
+  {% for c in d.rows %}
+  <a class="list-row" href="{{ link(selected=c.id) }}" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 140px 80px; text-decoration: none {% if d.selected and d.selected.id == c.id %}; background: var(--soft){% endif %}">
+    <span class="ellipsis" style="font-weight: 500">{{ c.title }}</span><span class="small muted ellipsis">{{ c.sub }}</span><span class="small">{{ c.status }}{% if c.stale %} <span class="chip chip-warn">Quiet</span>{% endif %}</span><span class="meta" style="text-align: right">{{ c.when }}</span>
+  </a>
+  {% else %}<div class="empty">No items yet.</div>{% endfor %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block pane %}
+{% if d.topic %}
+<aside class="pane" aria-label="Item">
+{% set x = d.selected %}
+{% if x %}
+  <div>
+    <div class="small muted">{{ x.topic }} · item #{{ x.id }}{% if x.source == "manual" %} · added by hand{% endif %}</div>
+    <h2 style="font-size: 24px; margin-top: 6px; line-height: 1.2">{{ x.fields.values() | select | first or "(no details)" }}</h2>
+    <div class="muted">{{ (x.fields.values() | select | list)[1:] | join(" · ") }}</div>
+  </div>
+  <div class="steps">{% for s in x.steps %}<div class="{{ 'reached' if s.reached }} {{ 'current' if s.current }}">{{ s.name }}</div>{% endfor %}</div>
+  {% if x.closed %}<div class="chip chip-warn" style="align-self: flex-start">{{ x.status }}</div>{% endif %}
+  {% if x.stale %}<div class="banner warn small">No email in a while. Maybe time to follow up.</div>{% endif %}
+  <div class="stack">
+    <div class="label">Emails</div>
+    {% for e in x.emails %}
+    <div class="row" style="align-items: baseline"><span class="meta" style="width: 52px; flex-shrink: 0">{{ e.date }}</span><span class="ellipsis grow"><span class="ellipsis" style="display: block">{{ e.subject }}</span>{% if e.category %}<span class="small muted">{{ e.category }}</span>{% endif %}</span></div>
+    {% else %}<div class="small muted">No emails linked yet.</div>{% endfor %}
+  </div>
+  <form method="post" action="/items/{{ x.id }}/notes" class="field">
+    <span class="label">Notes</span>
+    <textarea class="textarea" name="notes" rows="3">{{ x.notes }}</textarea>
+    <button class="btn" style="align-self: flex-end">Save notes</button>
+  </form>
+  <div class="grow"></div>
+  <form method="post" action="/items/{{ x.id }}/status" class="row">
+    <label class="small muted" for="status-{{ x.id }}">Status</label>
+    <select id="status-{{ x.id }}" class="select grow" name="status" data-autosubmit>
+      {% for s in x.statuses %}<option {% if s == x.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn">Move</button></noscript>
+  </form>
+{% else %}
+  <div><div class="label">Add an item by hand</div><div class="small muted" style="margin-top: 4px">For something that didn't come by email. Emails that mention it later join it.</div></div>
+  <form method="post" action="/items" class="stack">
+    <input type="hidden" name="topic" value="{{ d.topic }}">
+    {% for f in d.fields %}<label class="field"><span>{{ f | capitalize }}</span><input class="input" name="field-{{ f }}"></label>{% endfor %}
+    <label class="field"><span>Status</span><select class="select" name="status">{% for s in d.statuses %}<option>{{ s }}</option>{% endfor %}</select></label>
+    <button class="btn btn-primary">Add item</button>
+  </form>
+{% endif %}
+</aside>
+{% endif %}
+{% endblock %}

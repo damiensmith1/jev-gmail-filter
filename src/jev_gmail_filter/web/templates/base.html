@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}jevfilter{% endblock %} · jevfilter</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+{% block body %}
+<div class="shell">
+  {% include "_nav.html" %}
+  <main class="main">
+    {% include "_scan.html" %}
+    {% block main %}{% endblock %}
+  </main>
+  {% block pane %}{% endblock %}
+</div>
+{% endblock %}
+{% if flash %}<div class="flash" role="status">{{ flash }}</div>{% endif %}
+</body>
+</html>

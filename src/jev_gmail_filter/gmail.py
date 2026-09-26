@@ -96,6 +96,7 @@ class MailSource(Protocol):
         self, history_id: str, categories: tuple[str, ...] = DEFAULT_CATEGORIES
     ) -> tuple[list[str], str]: ...
     def add_labels(self, message_id: str, names: list[str]) -> None: ...
+    def remove_labels(self, message_id: str, names: list[str]) -> None: ...
 
 
 def parse_categories(value: str | None) -> tuple[str, ...]:
@@ -268,6 +269,15 @@ class GmailSource:
             self._svc.users()
             .messages()
             .modify(userId="me", id=message_id, body={"addLabelIds": label_ids})
+        )
+        self._call("modify", request)
+
+    def remove_labels(self, message_id: str, names: list[str]) -> None:
+        label_ids = [self._label_id(n) for n in names]
+        request = (
+            self._svc.users()
+            .messages()
+            .modify(userId="me", id=message_id, body={"removeLabelIds": label_ids})
         )
         self._call("modify", request)
 

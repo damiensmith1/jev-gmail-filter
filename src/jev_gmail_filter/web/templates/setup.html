@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Set up{% endblock %}
+{% block body %}
+<div class="setup">
+  <div class="setup-grid">
+    <div class="stack" style="gap: 28px">
+      <div class="brand" style="padding: 0"><span class="brand-mark">j</span><span class="brand-name">jevfilter</span></div>
+      <div><h1 style="font-size: 34px; line-height: 1.1">Set up in about fifteen minutes</h1><div class="sub" style="margin-top: 8px">Everything stays on this computer.</div></div>
+      <ol class="stepper" aria-label="Setup steps">
+        {% for name, done in steps %}
+        <li class="{{ 'done' if done }} {{ 'current' if loop.index0 == current }}" {% if loop.index0 == current %}aria-current="step"{% endif %}><span class="num">{{ "✓" if done else loop.index }}</span>{{ name }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <section class="card setup-card" aria-label="Current step">
+      <div class="meta">Step {{ current + 1 }} of {{ steps | length }}</div>
+      {% if flash %}<div class="banner bad small">{{ flash }}</div>{% endif %}
+
+      {% if current == 0 %}
+      <h2 style="font-size: 26px">Your TypeSafe API key</h2>
+      <div class="muted">jevfilter uses TypeSafe's Jev to judge your email. The key is saved to <span class="meta">.env</span> in this folder, which git ignores.</div>
+      <form method="post" action="/setup/key" class="stack">
+        <label class="field"><span>API key</span><input class="input" type="password" name="key" autocomplete="off" required autofocus></label>
+        <div class="row" style="justify-content: flex-end"><button class="btn btn-primary btn-lg">Continue</button></div>
+      </form>
+
+      {% elif current == 1 %}
+      <h2 style="font-size: 26px">Create your own Google client</h2>
+      <div class="muted">Everyone who uses jevfilter makes their own, so no one else's app ever sees your mail. It takes a few minutes, once.</div>
+      <ol class="guide">{% for title, detail in google_steps %}<li><span class="meta" style="padding-top: 1px">{{ loop.index }}</span><span><b>{{ title }}.</b> <span class="muted">{{ detail }}</span></span></li>{% endfor %}</ol>
+      <a class="btn" href="https://console.cloud.google.com" target="_blank" rel="noopener" style="align-self: flex-start">Open Google Cloud Console ↗</a>
+      <form method="post" action="/setup/client" enctype="multipart/form-data">
+        <label class="drop" data-drop>
+          <b>Drop the JSON you downloaded in step 3</b>
+          <span class="small muted">or click to choose it · stays in ./data, never committed</span>
+          <span class="meta" data-drop-name></span>
+          <input type="file" name="client" accept=".json,application/json" required>
+        </label>
+        <noscript><button class="btn btn-primary" style="margin-top: 10px">Upload</button></noscript>
+      </form>
+      <div class="hint">{{ testing_note }}</div>
+
+      {% elif current == 2 %}
+      <h2 style="font-size: 26px">Sign in to Gmail</h2>
+      {% if signin.state == "waiting" %}
+      <div class="banner" data-signin-waiting><span class="live busy"></span><span class="grow">Finish signing in in the browser tab that just opened…</span></div>
+      <div class="hint">{{ signin_note }}</div>
+      {% else %}
+      <div class="muted">A Google sign-in page opens in a new tab. jevfilter asks to read your email and add labels; it never sends or deletes anything.</div>
+      <div class="banner warn small">{{ signin_note }}</div>
+      {% if signin.state == "error" %}<div class="banner bad small">Sign-in didn't finish: {{ signin.error }}</div>{% endif %}
+      <form method="post" action="/setup/signin"><button class="btn btn-primary btn-lg">Sign in with Google</button></form>
+      {% endif %}
+
+      {% elif current == 3 %}
+      <h2 style="font-size: 26px">Pick your topics</h2>
+      <div class="muted">{% if account %}Signed in as {{ account }}. {% endif %}A topic is a plain-English description of emails you care about. Start from these and edit them anytime.</div>
+      <form method="post" action="/setup/topics" class="stack">
+        {% for ex in examples %}
+        <label class="choice"><input type="checkbox" name="ex-{{ ex.name }}" value="on" checked><span><b>{{ ex.name }}</b><br><span class="small muted">{{ ex.description }}</span></span></label>
+        {% endfor %}
+        <div class="row" style="justify-content: flex-end"><button class="btn btn-primary btn-lg">Use these</button></div>
+      </form>
+
+      {% else %}
+      <h2 style="font-size: 26px">First scan</h2>
+      <div class="muted">How far back should the first scan go? Only your Primary tab is read; you can add Updates and other Gmail categories later in Settings.</div>
+      <form method="get" action="/setup" class="stack">
+        <div class="radios">{% for label, d in choices.items() %}<label><input type="radio" name="days" value="{{ d }}" {% if (estimate and estimate.days == d) or (not estimate and d == 14) %}checked{% endif %}>{{ label }}</label>{% endfor %}</div>
+        <div><button class="btn">Check how much mail that is</button></div>
+      </form>
+      {% if estimate %}
+        {% if estimate.error %}<div class="banner bad small">Couldn't count: {{ estimate.error }}</div>
+        {% else %}
+        <div class="grid-2">
+          <div class="card card-pad"><div class="small muted">Emails in that window</div><div class="big-number">{{ estimate.count }}</div></div>
+          <div class="card card-pad"><div class="small muted">Estimated cost</div><div class="big-number" style="font-size: 22px">{{ money(estimate.low) }} – {{ money(estimate.high) }}</div></div>
+        </div>
+        <form method="post" action="/setup/start" class="stack">
+          <input type="hidden" name="days" value="{{ estimate.days }}"><input type="hidden" name="high" value="{{ estimate.high }}">
+          <label class="check"><input type="checkbox" name="dry" value="on" checked><span>Dry run first: judge without writing Gmail labels</span></label>
+          <div class="row" style="justify-content: flex-end"><button class="btn btn-quiet" name="skip" value="1">Skip for now</button><button class="btn btn-primary btn-lg">Start scan</button></div>
+        </form>
+        {% endif %}
+      {% endif %}
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% from "_icons.html" import icon %}
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="/"><span class="brand-mark">j</span><span class="brand-name">jevfilter</span></a>
+  <div class="nav-list">
+    <a class="nav-link" href="/" {% if nav.active == "overview" %}aria-current="page"{% endif %}>{{ icon("overview") }}<span class="grow">Overview</span></a>
+    <a class="nav-link" href="/needs" {% if nav.active == "needs" %}aria-current="page"{% endif %}>{{ icon("needs") }}<span class="grow">Needs you</span>{% if nav.needs %}<span class="chip chip-solid">{{ nav.needs }}</span>{% endif %}</a>
+    <a class="nav-link" href="/emails" {% if nav.active == "everything" %}aria-current="page"{% endif %}>{{ icon("everything") }}<span class="grow">Everything</span><span class="meta">{{ nav.emails }}</span></a>
+    {% if nav.has_items %}<a class="nav-link" href="/items" {% if nav.active == "items" %}aria-current="page"{% endif %}>{{ icon("items") }}<span class="grow">Items</span><span class="meta">{{ nav.item_count }}</span></a>{% endif %}
+  </div>
+  <div class="nav-list">
+    <div class="row nav-label"><a class="label grow" href="/topics" style="text-decoration: none">Topics</a></div>
+    {% for t in nav.topics %}
+    <a class="nav-link" href="/emails?kind=matched&amp;topic={{ t.name | urlencode }}" {% if nav.active == "topics" and t.name == nav_topic %}aria-current="page"{% endif %}><span class="dot t{{ loop.index0 % 4 }}"></span><span class="grow">{{ t.name }}</span><span class="meta">{{ t.matches }}</span></a>
+    {% endfor %}
+    <a class="nav-link muted" href="/topics" {% if nav.active in ("topics", "topic") %}aria-current="page"{% endif %}>{{ icon("plus", 14) }}<span class="grow">Manage topics</span></a>
+  </div>
+  <div class="grow"></div>
+  <div class="sync-card">
+    <div class="row small"><span class="live {% if scan and not scan.finished %}busy{% endif %}"></span>{% if scan and not scan.finished %}Syncing…{% else %}Synced {{ nav.synced }}{% endif %}</div>
+    <div class="meta">{{ nav.reading }} · {{ money(nav.spend_month) }} this month</div>
+    <form method="post" action="/sync"><button class="btn btn-block" {% if scan and not scan.finished %}disabled{% endif %}>Sync now</button></form>
+  </div>
+  <a class="nav-link" href="/settings" {% if nav.active == "settings" %}aria-current="page"{% endif %}>{{ icon("settings") }}<span class="grow muted">Settings</span>{% if not nav.labels_on %}<span class="chip chip-warn">dry run</span>{% endif %}</a>
+</nav>

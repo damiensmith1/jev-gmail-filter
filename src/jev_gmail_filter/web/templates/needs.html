@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Needs you{% endblock %}
+{% block main %}
+<header class="page-head">
+  <div><h1>Needs you</h1><div class="sub">jevfilter wasn't sure about these. Your answer is applied like any match, and kept for tuning later.</div></div>
+  {% if d.rows %}<form method="post" action="/reviews/recheck"><button class="btn" {% if scan and not scan.finished %}disabled{% endif %} title="Judge these again with your current topics">Re-check all</button></form>{% endif %}
+</header>
+<div class="stack" data-nav-list>
+  {% for r in d.rows %}
+  <a class="card review-card" href="/needs?selected={{ r.id }}" {% if r.id == d.selected %}aria-current="true"{% endif %}>
+    <div class="row" style="align-items: baseline; gap: 10px">
+      <span style="font-weight: 500">{{ r.from }}</span>
+      <span class="grow ellipsis muted">{{ r.subject or "(no subject)" }}</span>
+      <span class="chip">{{ r.topic }}{% if r.kind == "topic" %}?{% endif %}</span>
+    </div>
+    <div class="row"><span class="grow">{{ r.question }} <span class="meta">{{ pct(r.confidence) }}</span></span></div>
+  </a>
+  {% else %}
+  <div class="card empty">Nothing needs you right now.</div>
+  {% endfor %}
+</div>
+<div class="small muted">Tip: press j / k to move through the list.</div>
+{% endblock %}
+
+{% block pane %}
+{% set x = d.detail %}
+{% if x %}
+<aside class="pane" aria-label="Selected email">
+  <div>
+    <div class="small muted">{{ x.sender }} · {{ x.when }}</div>
+    <h2 style="font-size: 22px; margin-top: 6px; line-height: 1.25">{{ x.subject or "(no subject)" }}</h2>
+  </div>
+  <div class="email-body">{{ body if body is not none else x.snippet }}</div>
+  {% if x.kind == "topic" %}
+  <div class="stack">
+    <h3>Is this {{ x.topic }}?</h3>
+    <div class="row">
+      <div class="meter grow {{ 'warn' if x.p < x.accept }}"><span style="width: {{ (x.p * 100) | round }}%"></span><i class="tick" style="left: {{ (x.reject * 100) | round }}%"></i><i class="tick" style="left: {{ (x.accept * 100) | round }}%"></i></div>
+      <span class="meta">{{ pct(x.p) }}</span>
+    </div>
+    <div class="small muted">
+      {% if x.missing %}It's confident this is {{ x.topic }}, but couldn't find the {{ x.missing | join(", ") }}.
+      {% else %}Between "no" ({{ pct(x.reject) }}) and "yes" ({{ pct(x.accept) }}), so it's asking you.{% endif %}
+      {% if x.category %} It looks like <b style="color: var(--text)">{{ x.category }}</b>{% for k, v in x.fields.items() %}, {{ k }} <b style="color: var(--text)">{{ v }}</b>{% endfor %}.{% endif %}
+    </div>
+  </div>
+  <div class="grow"></div>
+  <div class="row">
+    <form method="post" action="/reviews/{{ x.id }}" class="grow"><input type="hidden" name="decision" value="yes"><button class="btn btn-primary btn-lg btn-block">Yes, it's {{ x.topic }}</button></form>
+    <form method="post" action="/reviews/{{ x.id }}"><input type="hidden" name="decision" value="no"><button class="btn btn-lg">No</button></form>
+  </div>
+  {% else %}
+  <div class="stack">
+    <h3>Which {{ x.topic }} item is this about?</h3>
+    <form method="post" action="/reviews/{{ x.id }}" class="stack">
+      {% for o in x.options %}
+      <label class="choice"><input type="radio" name="decision" value="{{ o.value }}" {% if loop.first %}checked{% endif %}><span class="grow"><span style="display: block; font-weight: 500">{{ o.label }}</span>{% if o.status %}<span class="small muted">{{ o.status }}</span>{% endif %}</span><span class="meta">{{ pct(o.p) }}</span></label>
+      {% endfor %}
+      <button class="btn btn-primary btn-lg">Confirm</button>
+    </form>
+  </div>
+  {% endif %}
+  <a class="small muted" href="{{ x.thread }}" target="_blank" rel="noopener" style="text-align: center">Open in Gmail ↗</a>
+</aside>
+{% endif %}
+{% endblock %}

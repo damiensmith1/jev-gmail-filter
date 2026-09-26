@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+{% block main %}
+<header class="page-head">
+  <div>
+    <h1>{{ o.greeting }}</h1>
+    <div class="sub">{{ o.new_since_yesterday }} new email{{ "" if o.new_since_yesterday == 1 else "s" }} since yesterday.{% if o.stats.needs %} {{ o.stats.needs }} need{{ "s" if o.stats.needs == 1 else "" }} a quick answer from you.{% endif %}</div>
+  </div>
+</header>
+
+<div class="grid-4">
+  <a class="card stat" href="/needs"><div class="small muted">Needs you</div><div class="big-number">{{ o.stats.needs }}</div><div class="meta">{% if o.stats.needs %}waiting on you{% else %}all clear{% endif %}</div></a>
+  <a class="card stat" href="/emails"><div class="small muted">New this week</div><div class="big-number">{{ o.stats.judged_week }}</div><div class="meta">of {{ nav.emails }} judged in total</div></a>
+  <a class="card stat" href="/items"><div class="small muted">Tracked items</div><div class="big-number">{{ o.stats.tracked }}</div><div class="meta">{{ o.stats.moved }} moved this week</div></a>
+  <a class="card stat" href="/items"><div class="small muted">Gone quiet</div><div class="big-number" {% if o.stats.quiet %}style="color: var(--warn)"{% endif %}>{{ o.stats.quiet }}</div><div class="meta">no email in a while</div></a>
+</div>
+
+<section class="card" aria-label="Needs you">
+  <div class="card-head"><h2 class="grow">Needs you</h2>{% if o.reviews %}<a class="small muted" href="/needs">Review all</a>{% endif %}</div>
+  {% for r in o.reviews %}
+  <div class="list-row" style="grid-template-columns: 150px minmax(0, 1fr) auto">
+    <span class="ellipsis" style="font-weight: 500">{{ r.from }}</span>
+    <a class="ellipsis" href="/needs?selected={{ r.id }}" style="text-decoration: none">
+      <span class="ellipsis" style="display: block">{{ r.subject or "(no subject)" }}</span>
+      <span class="small muted">{{ r.question }} <span class="meta">{{ pct(r.confidence) }}</span></span>
+    </a>
+    <span class="row">
+      {% for value, label in r.answers %}
+      <form method="post" action="/reviews/{{ r.id }}"><input type="hidden" name="decision" value="{{ value }}"><button class="btn {% if loop.first %}btn-primary{% endif %}">{{ label }}</button></form>
+      {% endfor %}
+    </span>
+  </div>
+  {% else %}
+  <div class="empty">Nothing needs you. jevfilter was sure about everything.</div>
+  {% endfor %}
+</section>
+
+<section class="grid-3" aria-label="Topics">
+  {% for c in o.cards %}
+  <a class="card card-pad stack" href="/emails?kind=matched&amp;topic={{ c.name | urlencode }}" style="text-decoration: none; gap: 10px">
+    <div class="row"><span class="grow" style="font-weight: 600">{{ c.name }}</span><span class="meta">{{ c.week }} this week</span></div>
+    <div class="bars" aria-label="Matches per day, last 14 days">{% for b in c.bars %}<span class="{{ 'zero' if not b }}" style="height: {{ [b, 12] | max }}%"></span>{% endfor %}</div>
+    <div class="small muted ellipsis">{{ c.summary }}</div>
+  </a>
+  {% endfor %}
+  <a class="card card-pad stack" href="/topics/new" style="text-decoration: none; justify-content: center; align-items: center; border-style: dashed; color: var(--muted)">+ New topic</a>
+</section>
+
+<section aria-label="Latest">
+  <div class="label" style="padding-bottom: 6px">Latest matches</div>
+  <div data-nav-list>
+  {% for m in o.latest %}
+    <a class="email-row" href="/emails?selected={{ m.gmail_id }}" style="grid-template-columns: 150px minmax(0, 1fr) auto 48px; border-bottom: 1px solid var(--line); border-radius: 0">
+      <span class="from ellipsis">{{ m.from }}</span><span class="ellipsis">{{ m.subject }}</span><span class="chip">{{ m.tag }}</span><span class="meta" style="text-align: right">{{ m.time }}</span>
+    </a>
+  {% else %}
+    <div class="empty">No matches yet. Run a sync, or add a topic.</div>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}
+
+{% block pane %}
+<aside class="pane" aria-label="Today">
+  <div><div class="label">Today</div><h2 style="font-size: 22px; margin-top: 4px">{{ o.today }}</h2></div>
+  {% if o.has_reply_flag %}
+  <div class="stack">
+    <h3>Replies you owe</h3>
+    {% for r in o.owed %}
+    <a class="card" href="/emails?selected={{ r.gmail_id }}" style="padding: 12px; text-decoration: none; background: var(--raised)"><div style="font-weight: 500">{{ r.who }}</div><div class="small muted ellipsis">{{ r.what }}</div></a>
+    {% else %}<div class="small muted">Nothing asks you for a reply.</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% if o.has_tracking %}
+  <div class="stack">
+    <h3>Gone quiet</h3>
+    {% for q in o.quiet %}
+    <a class="row" href="/items?topic={{ q.topic | urlencode }}&amp;selected={{ q.id }}" style="text-decoration: none"><span class="grow ellipsis">{{ q.who }} <span class="muted">· {{ q.status }}</span></span><span class="chip chip-warn">{{ q.days }} days</span></a>
+    {% else %}<div class="small muted">Nothing has gone quiet.</div>{% endfor %}
+  </div>
+  <div class="stack">
+    <h3>Moved this week</h3>
+    {% for m in o.moved %}
+    <a class="row small" href="/items?topic={{ m.topic | urlencode }}&amp;selected={{ m.id }}" style="text-decoration: none; align-items: baseline"><span class="meta" style="width: 44px">{{ m.day }}</span><span class="grow ellipsis">{{ m.who }}</span><span class="muted">→ {{ m.to }}</span></a>
+    {% else %}<div class="small muted">No changes this week.</div>{% endfor %}
+  </div>
+  {% endif %}
+</aside>
+{% endblock %}

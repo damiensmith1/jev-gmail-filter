@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Topics{% endblock %}
+{% block main %}
+<header class="page-head">
+  <div><h1>Topics</h1><div class="sub">Plain-English descriptions of the emails you care about.</div></div>
+  <form method="get" action="/topics/new" class="row">
+    <select class="select" name="start" aria-label="Start from" style="width: 200px">{% for s in starters %}<option>{{ s }}</option>{% endfor %}</select>
+    <button class="btn btn-primary">New topic</button>
+  </form>
+</header>
+{% if saved %}
+<div class="banner good">
+  <div class="grow small"><b>Saved {{ saved }}.</b> New email is judged with it from now on. Emails already judged used the old version; rescan to judge them again.</div>
+  <form method="post" action="/rescan" class="row"><input class="input" type="number" name="days" value="{{ days }}" min="1" max="365" style="width: 80px" aria-label="Days back"><span class="small">days</span><button class="btn btn-primary">Rescan</button></form>
+  <a class="btn btn-quiet" href="/topics">Not now</a>
+</div>
+{% endif %}
+<div class="stack">
+  {% for c in cards %}
+  <article class="card card-pad" style="display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 20px">
+    <div class="stack" style="gap: 6px">
+      <h2>{{ c.name }}</h2>
+      <div class="ellipsis" style="white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">{{ c.description }}</div>
+      <div class="chips" style="margin-top: 4px">
+        {% if c.categories %}<span class="chip">{{ c.categories }} categories</span>{% endif %}
+        {% if c.fields %}<span class="chip">pulls out {{ c.fields | join(", ") }}</span>{% endif %}
+        {% if c.tracked %}<span class="chip chip-good">tracked as items</span>{% endif %}
+        <span class="chip">{% if c.label %}label: {{ c.label }}{% else %}no Gmail label{% endif %}</span>
+      </div>
+      <div class="row" style="margin-top: 8px">
+        <a class="btn btn-primary" href="/topics/{{ c.name | urlencode }}/edit">Edit</a>
+        <a class="btn" href="/emails?kind=matched&amp;topic={{ c.name | urlencode }}">See emails</a>
+        <details class="more"><summary>Delete…</summary><form method="post" action="/topics/{{ c.name | urlencode }}/delete" class="row" style="margin-top: 6px"><span class="small muted">Past results stay; new email won't be judged against it.</span><button class="btn" style="color: var(--bad)">Delete {{ c.name }}</button></form></details>
+      </div>
+    </div>
+    <div class="stack" style="gap: 2px; text-align: right">
+      <div class="small muted">Matched</div><div class="big-number">{{ c.matches }}</div>
+      <div class="meta">last: {{ c.last }}</div>
+      {% if c.reviews %}<a class="meta" href="/needs" style="color: var(--warn)">{{ c.reviews }} to review</a>{% endif %}
+    </div>
+  </article>
+  {% else %}
+  <div class="card empty">No topics yet. Start one above.</div>
+  {% endfor %}
+</div>
+<details class="more card card-pad">
+  <summary>Rescan older mail</summary>
+  <form method="post" action="/rescan" class="row" style="margin-top: 10px">
+    <span class="small muted grow">Judge older email against topics it hasn't been judged against (new or edited topics). Already-current email is skipped.</span>
+    <input class="input" type="number" name="days" value="{{ days }}" min="1" max="365" style="width: 80px" aria-label="Days back"><span class="small">days</span>
+    <button class="btn" {% if scan and not scan.finished %}disabled{% endif %}>Rescan</button>
+  </form>
+</details>
+{% endblock %}

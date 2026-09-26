@@ -228,3 +228,10 @@ def test_new_since_filters_by_chosen_categories():
     assert source(stub).new_since("1", ("primary", "updates"))[0] == ["p", "u"]
     everything = ("primary", "updates", "promotions", "social", "forums")
     assert source(stub).new_since("1", everything)[0] == ["p", "u", "n"]
+
+
+def test_remove_labels():
+    stub = StubService()
+    s = source(stub)
+    s.remove_labels("m1", ["Jobs"])
+    assert stub.modified == [("m1", {"removeLabelIds": ["L1"]})]
