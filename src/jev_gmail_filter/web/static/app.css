@@ -124,8 +124,6 @@ h3 { font-size: 15px; }
 .email-row { display: grid; grid-template-columns: 170px minmax(0, 1fr) 160px 52px; gap: 16px; align-items: center; padding: 10px 12px; border-radius: var(--radius); text-decoration: none; }
 .email-row:hover { background: var(--raised); }
 .email-row[aria-current="true"] { background: var(--soft); }
-.email-row.dim .from, .email-row.dim .subject { color: var(--muted); font-weight: 400; }
-.email-row .from { font-weight: 500; }
 .tone-warn { color: var(--warn); }
 .tone-match { color: var(--text); }
 .tone-none { color: var(--muted); }

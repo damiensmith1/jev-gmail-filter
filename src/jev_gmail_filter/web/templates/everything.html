@@ -22,10 +22,10 @@
 </nav>
 <div data-nav-list>
   {% for m in d.rows %}
-  <a class="email-row {{ 'dim' if m.tone == 'none' }}" href="{{ q(selected=m.gmail_id) }}" {% if m.gmail_id == d.selected %}aria-current="true"{% endif %}>
+  <a class="email-row" href="{{ q(selected=m.gmail_id) }}" {% if m.gmail_id == d.selected %}aria-current="true"{% endif %}>
     <span class="from ellipsis">{{ m.from }}</span>
     <span class="subject ellipsis">{{ m.subject or "(no subject)" }}</span>
-    <span class="small ellipsis tone-{{ m.tone }}">{{ m.tag }}</span>
+    <span class="ellipsis">{% if m.tone == "none" %}<span class="small tone-none">{{ m.tag }}</span>{% else %}<span class="chip {{ 'chip-warn' if m.tone == 'warn' }}">{{ m.tag }}</span>{% endif %}</span>
     <span class="meta" style="text-align: right">{{ m.time }}</span>
   </a>
   {% else %}

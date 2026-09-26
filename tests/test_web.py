@@ -400,3 +400,13 @@ def test_nav_shows_item_count(tmp_path, monkeypatch, inbox):
     client, _, _ = synced(tmp_path, monkeypatch, inbox)
     r = client.get("/")
     assert re.search(r"Items</span><span class=\"meta\">\d+</span>", r.text)
+
+
+def test_gmail_links_open_the_thread_in_the_connected_account():
+    from jev_gmail_filter.web.views import gmail_link
+
+    assert gmail_link("abc", "sam@example.com") == (
+        "https://mail.google.com/mail/?authuser=sam%40example.com#all/abc"
+    )
+    assert gmail_link("abc") == "https://mail.google.com/mail/u/0/#all/abc"
+    assert gmail_link(None, "sam@example.com") == "#"

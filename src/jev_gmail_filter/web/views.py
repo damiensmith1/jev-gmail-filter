@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from email.utils import parseaddr
 from typing import Any
+from urllib.parse import quote
 
 import jevfilter as jf
 
@@ -72,8 +73,14 @@ def iso_ago(days: float, now: datetime | None = None) -> str:
     return ((now or datetime.now(UTC)) - timedelta(days=days)).isoformat()
 
 
-def gmail_link(thread_id: str | None) -> str:
-    return f"https://mail.google.com/mail/u/0/#all/{thread_id}" if thread_id else "#"
+def gmail_link(thread_id: str | None, account: str | None = None) -> str:
+    """The thread in Gmail. `authuser` picks the connected account; without it
+    Gmail uses the browser's first signed-in account and, not finding the
+    thread there, just shows that inbox."""
+    if not thread_id:
+        return "#"
+    who = f"?authuser={quote(account)}" if account else "u/0/"
+    return f"https://mail.google.com/mail/{who}#all/{thread_id}"
 
 
 # -- the side nav ----------------------------------------------------------------------
@@ -253,7 +260,7 @@ def review_detail(store: Store, topics: jf.Topics, r: Any) -> dict:
         "subject": r.subject,
         "sender": r.sender,
         "when": clock(email.get("received_at")),
-        "thread": gmail_link(email.get("thread_id")),
+        "thread": gmail_link(email.get("thread_id"), store.get_meta("account")),
         "snippet": email.get("snippet", ""),
         "reasons": r.reasons,
         "accept": th["accept"],
@@ -406,7 +413,7 @@ def email_detail(store: Store, topics: jf.Topics, gmail_id: str) -> dict | None:
         "from": sender_name(email["sender"]),
         "when": clock(email["received_at"]),
         "snippet": email["snippet"],
-        "thread": gmail_link(email["thread_id"]),
+        "thread": gmail_link(email["thread_id"], store.get_meta("account")),
         "verdicts": verdicts,
         "others": [{"topic": r["topic"], "outcome": r["outcome"], "p": r["p"]} for r in others],
         "corrected": [r["topic"] for r in others if "user_corrected" in (r.get("reasons") or [])],
@@ -483,6 +490,7 @@ def item_detail(store: Store, topic: jf.Topic, item: Item, now: datetime | None 
         {"name": s, "reached": i <= reached, "current": s == item.status}
         for i, s in enumerate(pipeline)
     ]
+    account = store.get_meta("account")
     return {
         "id": item.id,
         "topic": topic.name,
@@ -498,7 +506,7 @@ def item_detail(store: Store, topic: jf.Topic, item: Item, now: datetime | None 
             {
                 "date": clock(e["received_at"], now),
                 "gmail_id": e["gmail_id"],
-                "thread": gmail_link(e["thread_id"]),
+                "thread": gmail_link(e["thread_id"], account),
                 "subject": e["subject"],
                 "category": e["category"] or "",
             }
