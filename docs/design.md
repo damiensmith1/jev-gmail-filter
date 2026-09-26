@@ -225,14 +225,51 @@ verification still takes paperwork and weeks of review. Not worth it
 right now; the app reads whichever client file it's given, so switching
 later is a configuration change, not a rewrite.
 
-## Code layout (target)
+## Code layout
 
-Package `jev_gmail_filter` (CLI `jev-gmail-filter`): `gmail.py` (OAuth, polling, labels),
-`candidates.py` (extraction by field kind), `pipeline.py` (candidates →
-jevfilter → items → labels), `db.py`, `cli.py`, `app.py` (Streamlit).
-`topics/examples/` ships sample topics.
+Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 
-Built from scratch; nothing carries over from the discarded prototype.
+- `config.py` — data folder (`./data` or `$JGF_DATA_DIR`), `.env` loading
+- `mail.py` — the `Email` model, parsing Gmail messages (plain text preferred, HTML → text)
+- `gmail.py` — `MailSource` interface; `GmailSource` (sign-in, search,
+  history, labels); setup checks with fix-it messages
+- `candidates.py` — candidate values by field kind (`org`, `title`, `email`)
+  plus values already on the topic's items
+- `db.py` — SQLite store (schema above)
+- `pipeline.py` — email → jevfilter (staged) → items / statuses → storage,
+  labels, review queue; sync; stale refresh; resolving reviews
+- `cli.py` — `init`, `sync`, `watch`, `review`, `items`, `labels`, `status`
+- `app.py` (Streamlit) — Milestone 2
+
+`topics/examples/` ships sample topics; `init` copies the chosen ones into
+`data/topics/`, where the user edits them.
+
+## Sync behaviour
+
+- First run (or `sync --since-days N`): a date-based search of the Primary
+  inbox, processed oldest first so item statuses move forward in order.
+- After that: Gmail history since the saved `history_id`, keeping only
+  Primary-tab messages. If the saved id has expired, fall back to a date
+  scan from a day before the last sync.
+- The saved position only advances when a sync finishes. A sync stopped by
+  the spend cap, a Jev error or `--limit` is simply resumed next time;
+  already-judged mail is skipped (judged once per topic version).
+- Judging uses jevfilter's staged mode (`speculative=False`): most mail
+  matches no topic, so membership is asked first.
+- Labels: a match gets `<label>` and `<label>/<category>`. Labels can be
+  off (dry run); `labels` turns them on and labels past matches. A failed
+  label write is reported, never loses the judgment.
+- Reviews: uncertain membership → a "topic" review (yes / no); an
+  uncertain item match → an "item" review (item id / new). Resolving applies
+  the same labelling and tracking as an automatic match.
+
+## Status
+
+Milestone 1 (CLI end to end) is built: everything above except the web
+UI. Tested with a fake Gmail and a scripted Jev (no network); checked end
+to end against real Jev with a fake inbox (6 realistic emails: all
+classified correctly, the follow-up linked to the right job, $0.00036).
+Not yet run against a real Gmail account.
 
 ## Depends on jevfilter
 
@@ -263,6 +300,8 @@ which cuts cost when most mail matches no topic, and category examples).
 - Everyone, the maintainer included, brings their own Google OAuth client
   (Desktop app, `gmail.modify`), set up through a guided `init`. No shared
   client for now; Google verification of a shared one may come later.
+- User topics live in `data/topics/` (gitignored), not the repo, so
+  personal topics never end up in a commit; the repo ships only examples.
 - Scan the Primary inbox only — skip Promotions, Social, Updates,
   Forums, Spam, Sent, Drafts. Jev is only called for new messages there.
 - Claude summaries are future work, after the core is locked.
@@ -277,7 +316,8 @@ which cuts cost when most mail matches no topic, and category examples).
   amount, date, order number)? If some are generic, they could move into
   jevfilter's extractors.
 - Resolving a review in the UI should update the Gmail label.
-- Poll interval default (proposed: 5 minutes).
+- Poll interval: 5 minutes by default (`watch --interval`); revisit once
+  it runs on real mail.
 
 ## Future: summaries with Claude
 

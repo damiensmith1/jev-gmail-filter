@@ -5,8 +5,12 @@ description: >
 exclude: Job alerts, recommendation digests, newsletters, marketing.
 
 categories:
-  applied: Confirms I submitted an application.
-  recruiter: A recruiter or hiring manager reaches out about a role.
+  applied:
+    description: Confirms I submitted an application.
+    examples: [Thanks for applying to the role, We received your application]
+  recruiter:
+    description: A recruiter or hiring manager reaches out about a role.
+    exclude: Automatic confirmations of an application I sent.
   hiring_contact: Other HR / hiring-team mail about a role — scheduling, follow-ups, info requests.
   interview: Invites me to an interview or phone screen, or confirms/reschedules one.
   assessment: Asks me to complete a take-home, coding test or online assessment.
