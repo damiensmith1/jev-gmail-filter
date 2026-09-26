@@ -17,10 +17,13 @@ from jevfilter import track
 
 from . import candidates
 from .db import Item, Store
-from .gmail import HistoryExpired, MailSource, inbox_query, parse_categories
+from .gmail import MailSource, inbox_query, parse_categories
 from .mail import Email
 
 DEFAULT_BACKSCAN = timedelta(days=14)
+SYNC_OVERLAP = timedelta(days=1)
+"""Each sync re-lists mail from a day before the last one started, so nothing slips
+through (mail arriving mid-sync, clock skew); already-judged mail is skipped unfetched."""
 
 
 @dataclass
@@ -164,20 +167,28 @@ class Pipeline:
         report: SyncReport,
         *,
         forced: int | str | None = None,
+        edits: dict[str, str] | None = None,
     ) -> None:
         """Link the email to an item (existing or new) and move its status.
 
         `forced` is a decision from the review queue: an item id, or "new".
+        `edits` are field values a person typed in, overriding Jev's.
         """
+        edits = {k: v for k, v in (edits or {}).items() if v}
         item: Item | None = None
         if forced is not None:
             item = None if forced == "new" else self.store.item(int(forced))
         else:
             item = self.store.item_for_thread(topic.name, email.thread_id)
-            if item is None:
+            # Without the value items are matched on (say, no company), the
+            # other fields alone (a common job title) would merge unrelated
+            # items, so such an email starts its own.
+            if item is None and not self._missing_match_on(topic, tr, edits):
                 existing = self.store.items(topic.name)
                 if existing:
-                    m = f.match_item(content, topic, self._item_views(existing), result=tr)
+                    m = f.match_item(
+                        content, topic, self._item_views(existing), result=tr, fields=edits
+                    )
                     report.cost_usd += m.cost_usd or 0.0
                     if m.outcome == "review":
                         self.store.open_review(
@@ -192,7 +203,7 @@ class Pipeline:
                     item = self.store.item(m.item_id) if m.item_id is not None else None
 
         category = tr.category.value if tr.category else None
-        values = {k: v.value for k, v in tr.fields.items() if v.value}
+        values = {k: v.value for k, v in tr.fields.items() if v.value} | edits
         pipeline_statuses = set(topic.track.statuses) if topic.track else set()
         when = email.date.isoformat()
         if item is None:
@@ -235,33 +246,36 @@ class Pipeline:
     def sync(
         self, *, since: datetime | None = None, limit: int | None = None, progress: Any = None
     ) -> SyncReport:
-        """Process new Primary-inbox mail.
+        """Process new inbox mail in the chosen Gmail categories.
 
-        First run (or `since=`): scan by date. After that: only what Gmail's
-        history says arrived since the last sync. The saved position only
-        advances when a sync finishes, so an interrupted run is simply
-        resumed (already-judged mail is skipped).
+        Always a Gmail search, so "Primary" means exactly what Gmail's own
+        `category:primary` means for this account (Gmail's change feed labels
+        mail differently: on the first real run it tagged most of what Gmail
+        shows as Primary `CATEGORY_UPDATES`, so a label filter missed it).
+
+        First run (or `since=`): the backscan window chosen at setup. After
+        that: everything since a day before the last sync started. Already
+        judged mail is skipped before it's fetched, so the overlap is cheap.
+        `last_sync_at` only advances when a sync finishes, so an interrupted
+        run is simply resumed.
         """
         report = SyncReport()
-        categories = self.categories()
-        saved = self.store.get_meta("history_id")
-        if since is not None or saved is None:
-            start = self.source.history_id()
-            chosen = self.store.get_meta("backscan_days")  # the window picked at setup
-            window = timedelta(days=float(chosen)) if chosen else DEFAULT_BACKSCAN
-            after = since or datetime.now(UTC) - window
-            ids = list(reversed(list(self.source.search(inbox_query(categories, after)))))
-            new_history = start
+        started = datetime.now(UTC)
+        last = self.store.get_meta("last_sync_at")
+        if since is not None:
+            after = since
+        elif last:
+            after = datetime.fromisoformat(last) - SYNC_OVERLAP
         else:
-            try:
-                ids, new_history = self.source.new_since(saved, categories)
-            except HistoryExpired:
-                last = self.store.get_meta("last_sync_at")
-                after = (
-                    datetime.fromisoformat(last) if last else datetime.now(UTC) - DEFAULT_BACKSCAN
-                ) - timedelta(days=1)
-                new_history = self.source.history_id()
-                ids = list(reversed(list(self.source.search(inbox_query(categories, after)))))
+            chosen = self.store.get_meta("backscan_days")  # the window picked at setup
+            after = started - (timedelta(days=float(chosen)) if chosen else DEFAULT_BACKSCAN)
+        found = list(reversed(list(self.source.search(inbox_query(self.categories(), after)))))
+        ids = []
+        for gmail_id in found:  # oldest first, so item statuses move forward in order
+            if self._judged(gmail_id):
+                report.skipped += 1
+            else:
+                ids.append(gmail_id)
 
         truncated = limit is not None and len(ids) > limit
         if truncated:
@@ -287,10 +301,19 @@ class Pipeline:
                 progress(n, len(ids))
 
         if report.stopped is None and not truncated:
-            self.store.set_meta("history_id", new_history)
-            self.store.set_meta("last_sync_at", datetime.now(UTC).isoformat())
+            self.store.set_meta("last_sync_at", started.isoformat())
         self.refresh_stale()
         return report
+
+    @staticmethod
+    def _missing_match_on(topic: jf.Topic, tr: jf.TopicResult, edits: dict[str, str]) -> bool:
+        keys = topic.track.match_on if topic.track else ()
+        return any(not (edits.get(k) or (tr.fields.get(k) and tr.fields[k].value)) for k in keys)
+
+    def _judged(self, gmail_id: str) -> bool:
+        """Already judged against every current topic version (no need to fetch it)."""
+        judged = self.store.judged_versions(gmail_id)
+        return all(t.version in judged.get(t.name, set()) for t in self.topics.values())
 
     def categories(self) -> tuple[str, ...]:
         """The Gmail inbox categories this app reads (Settings; default Primary only)."""
@@ -314,9 +337,12 @@ class Pipeline:
 
     # -- review queue ------------------------------------------------------------------
 
-    def resolve(self, review_id: int, decision: str) -> str:
+    def resolve(self, review_id: int, decision: str, fields: dict[str, str] | None = None) -> str:
         """Apply a person's decision. Topic reviews: "yes" / "no". Item reviews:
-        an item id or "new". Returns a short description of what happened."""
+        an item id or "new". `fields` are values the person filled in or
+        corrected (e.g. a company Jev couldn't find). Returns a short
+        description of what happened."""
+        fields = {k: v.strip() for k, v in (fields or {}).items() if v and v.strip()}
         review = self.store.review(review_id)
         if review is None:
             raise ValueError(f"no review #{review_id}")
@@ -337,7 +363,9 @@ class Pipeline:
                     email = self.source.get(review.gmail_id)
                     content = jf.Content(email.state(), candidates=self._candidates(email, [topic]))
                     with self.store.transaction():
-                        self._track(self._filter([topic]), topic, tr, email, content, report)
+                        self._track(
+                            self._filter([topic]), topic, tr, email, content, report, edits=fields
+                        )
                     if report.reviews:
                         outcome += "; which item it belongs to needs a decision too"
         else:
@@ -353,7 +381,9 @@ class Pipeline:
                     self._filter([topic]), topic, tr, email, content, report, forced=decision
                 )
             outcome = "new item created" if decision == "new" else f"linked to item #{decision}"
-        self.store.resolve_review(review_id, {"decision": decision})
+        self.store.resolve_review(
+            review_id, {"decision": decision} | ({"fields": fields} if fields else {})
+        )
         if report.errors:
             outcome += f" (warning: {report.errors[0]})"
         return outcome

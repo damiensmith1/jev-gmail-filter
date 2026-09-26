@@ -44,9 +44,18 @@
       {% if x.category %} It looks like <b style="color: var(--text)">{{ x.category }}</b>{% for k, v in x.fields.items() %}, {{ k }} <b style="color: var(--text)">{{ v }}</b>{% endfor %}.{% endif %}
     </div>
   </div>
+  <form method="post" action="/reviews/{{ x.id }}" id="yes-{{ x.id }}" class="stack">
+    <input type="hidden" name="decision" value="yes">
+    {% for f in x.edit %}
+    <label class="field"><span>{{ f.name | capitalize }}{% if f.missing %} <span class="small muted">· not found, add it if you know it</span>{% endif %}</span>
+      <input class="input" name="field-{{ f.name }}" value="{{ f.value }}" list="suggest-{{ f.name }}" autocomplete="off">
+      {% if f.suggest %}<datalist id="suggest-{{ f.name }}">{% for c in f.suggest %}<option value="{{ c }}">{% endfor %}</datalist>{% endif %}
+    </label>
+    {% endfor %}
+  </form>
   <div class="grow"></div>
   <div class="row">
-    <form method="post" action="/reviews/{{ x.id }}" class="grow"><input type="hidden" name="decision" value="yes"><button class="btn btn-primary btn-lg btn-block">Yes, it's {{ x.topic }}</button></form>
+    <button class="btn btn-primary btn-lg btn-block grow" form="yes-{{ x.id }}">Yes, it's {{ x.topic }}</button>
     <form method="post" action="/reviews/{{ x.id }}"><input type="hidden" name="decision" value="no"><button class="btn btn-lg">No</button></form>
   </div>
   {% else %}

@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 
 import jevfilter as jf
@@ -23,7 +24,7 @@ def test_first_sync_judges_labels_and_creates_items(pipeline, mail, store):
     assert mail.labels == {"a": ["Jobs", "Jobs/applied"], "c": ["Receipts", "Receipts/order"]}
     [job] = store.items("Jobs")
     assert job.fields == {"company": "Acme"} and job.status == "applied"
-    assert store.get_meta("history_id") == "100"
+    assert store.get_meta("last_sync_at") is not None
 
 
 def test_oldest_first_so_status_moves_forward(pipeline, mail, store):
@@ -90,11 +91,36 @@ def test_same_thread_joins_the_same_item_without_matching(pipeline, mail, store,
 def test_match_item_links_to_existing_or_creates_new(pipeline, mail, store):
     mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=3)
     pipeline.sync()
-    mail.deliver(email("b", "[jobs] Acme interview", "cat=interview Acme item=1", days_ago=1))
+    mail.deliver(email("b", "[jobs] Acme interview", "cat=interview Acme item=1", days_ago=0.2))
     mail.deliver(email("c", "[jobs] Acme other role", "cat=recruiter Acme item=new", days_ago=0))
     pipeline.sync()
     items = store.items("Jobs")
     assert [(i.id, i.status) for i in items] == [(1, "interviewing"), (2, "contacted")]
+
+
+def test_email_without_the_match_on_value_starts_its_own_item(pipeline, mail, store, fake_judge):
+    # No company in either: matching on the other fields alone could merge
+    # two unrelated applications, so each gets its own item.
+    mail.emails["a"] = email("a", "[jobs] Application sent", "cat=applied item=1", days_ago=2)
+    mail.emails["b"] = email("b", "[jobs] Application sent", "cat=applied item=1", days_ago=1)
+    pipeline.sync()
+    for r in store.reviews():
+        pipeline.resolve(r.id, "yes")
+    assert len(store.items("Jobs")) == 2
+    assert not any("Jobs/item" in qs for _, qs in fake_judge.calls)
+
+
+def test_a_review_can_fill_in_a_missing_field(pipeline, mail, store):
+    mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=3)
+    mail.emails["b"] = email("b", "[jobs] Application sent", "cat=interview item=1", days_ago=1)
+    pipeline.sync()
+    [review] = store.reviews()
+    assert review.reasons == ["field_missing:company"]
+    pipeline.resolve(review.id, "yes", {"company": " Acme ", "role": ""})
+    [job] = store.items("Jobs")
+    assert job.fields["company"] == "Acme" and job.status == "interviewing"
+    [(decision,)] = store._db.execute("SELECT decision FROM reviews").fetchall()
+    assert json.loads(decision) == {"decision": "yes", "fields": {"company": "Acme"}}
 
 
 def test_uncertain_membership_goes_to_review_and_can_be_accepted(pipeline, mail, store):
@@ -122,7 +148,7 @@ def test_uncertain_item_match_goes_to_review(store, mail, topics):
     p = Pipeline(store, mail, topics, judge=fake)
     mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=2)
     p.sync()
-    mail.deliver(email("b", "[jobs] Acme again", "cat=interview Acme", days_ago=1))
+    mail.deliver(email("b", "[jobs] Acme again", "cat=interview Acme", days_ago=0.2))
     r = p.sync()
     assert r.reviews == 1 and len(store.items("Jobs")) == 1
     [review] = store.reviews()
@@ -157,7 +183,7 @@ def test_budget_stop_keeps_position(store, mail, topics, fake_judge):
     p = Pipeline(store, mail, topics, judge=fake_judge, budget=jf.Budget(usd=0))
     r = p.sync()
     assert r.stopped and "spend cap" in r.stopped and r.judged == 0
-    assert store.get_meta("history_id") is None  # next run starts over, nothing lost
+    assert store.get_meta("last_sync_at") is None  # next run starts over, nothing lost
     r = Pipeline(store, mail, topics, judge=fake_judge).sync()
     assert r.judged == 3
 
@@ -166,11 +192,11 @@ def test_limit_does_not_advance_position(pipeline, mail, store):
     for i in range(3):
         mail.emails[str(i)] = email(str(i), f"hello {i}", "x", days_ago=3 - i)
     r = pipeline.sync(limit=2)
-    assert r.scanned == 2 and store.get_meta("history_id") is None
+    assert r.scanned == 2 and store.get_meta("last_sync_at") is None
 
 
-def test_expired_history_falls_back_to_a_date_scan(pipeline, mail):
-    # The fallback rescans from a day before the last sync, so "a" is seen again (and skipped).
+def test_later_syncs_overlap_the_last_one_and_skip_judged_mail(pipeline, mail):
+    # Each sync lists mail from a day before the last one, so "a" is listed again (skipped).
     mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=0.5)
     pipeline.sync()
     mail.expired = True
@@ -255,7 +281,7 @@ def test_gmail_error_stops_cleanly_and_resumes(store, topics, fake_judge):
     mail = Limited([email(str(i), f"hi {i}", "x", days_ago=3 - i) for i in range(3)])
     r = Pipeline(store, mail, topics, judge=fake_judge).sync()
     assert r.judged == 1 and "rate limit reached" in r.stopped
-    assert store.get_meta("history_id") is None
+    assert store.get_meta("last_sync_at") is None
     r = Pipeline(store, mail, topics, judge=fake_judge).sync()
     assert r.judged == 2 and r.skipped == 1 and r.stopped is None
 
@@ -290,3 +316,23 @@ def test_only_chosen_categories_are_read(pipeline, mail, store):
     mail.deliver(email("u2", "[jobs] Initech 2", "x", category="updates", days_ago=0))
     mail.deliver(email("x2", "Sale again", "x", category="promotions", days_ago=0))
     assert pipeline.sync().scanned == 1  # history keeps only chosen categories
+
+
+def test_judged_mail_is_skipped_without_fetching(pipeline, mail):
+    mail.emails["a"] = email("a", "[jobs] Applied to Acme", "cat=applied Acme", days_ago=0.5)
+    pipeline.sync()
+    fetched = len(mail.fetched)
+    mail.deliver(email("b", "[receipt] Paid", "x", sender="S <s@shop.example>", days_ago=0))
+    r = pipeline.sync()
+    assert r.skipped == 1 and r.judged == 1
+    assert mail.fetched[fetched:] == ["b"]  # "a" was listed but never fetched again
+
+
+def test_later_syncs_search_from_a_day_before_the_last(pipeline, mail, store):
+    import re
+
+    pipeline.sync()
+    last = datetime.fromisoformat(store.get_meta("last_sync_at"))
+    pipeline.sync()
+    after = int(re.search(r"after:(\d+)", mail.queries[-1]).group(1))
+    assert abs(after - (last - timedelta(days=1)).timestamp()) < 2

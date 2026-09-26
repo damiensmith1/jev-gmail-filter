@@ -135,6 +135,10 @@ State is the email: `from`, `subject`, `date`, `body` (trimmed).
    item in this topic, use it (no Jev call). Otherwise
    `match_item(email, topic, items)`: code pre-filters items by
    `match_on` fields, and Jev picks which remaining item it is, or "new".
+   An email missing a `match_on` value (e.g. no company found) always
+   starts a new item: matching on the other fields alone merged
+   unrelated items (two applications for the same job title at
+   different companies).
 4. **Apply (app).** Store the result, link or create the item, update its
    status via `track.next_status`, write Gmail labels, queue reviews.
 
@@ -241,7 +245,7 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 - `config.py` — data folder (`./data` or `$JGF_DATA_DIR`), `.env` loading
 - `mail.py` — the `Email` model, parsing Gmail messages (plain text preferred, HTML → text)
 - `gmail.py` — `MailSource` interface; `GmailSource` (sign-in, search,
-  history, labels); setup checks with fix-it messages
+  labels, quota pacing); setup checks with fix-it messages
 - `candidates.py` — candidate values by field kind (`org`, `title`, `email`)
   plus values already on the topic's items
 - `db.py` — SQLite store (schema above)
@@ -261,14 +265,20 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 
 ## Sync behaviour
 
-- First run (or `sync --since-days N`): a date-based search of the Primary
-  inbox, processed oldest first so item statuses move forward in order.
-- After that: Gmail history since the saved `history_id`, keeping only
-  Primary-tab messages. If the saved id has expired, fall back to a date
-  scan from a day before the last sync.
-- The saved position only advances when a sync finishes. A sync stopped by
-  the spend cap, a Jev error or `--limit` is simply resumed next time;
-  already-judged mail is skipped (judged once per topic version).
+- Every sync is a Gmail search for the chosen categories (e.g.
+  `in:inbox category:primary`), so "Primary" means exactly what Gmail's
+  own search means for the account. (An earlier version used Gmail's
+  change feed after the first scan and kept messages labelled
+  `CATEGORY_PERSONAL`; on a real inbox Gmail's search counted most
+  `CATEGORY_UPDATES`-labelled mail as Primary too, so later syncs silently
+  skipped mail the first scan had included.)
+- First run (or `sync --since-days N`): the backscan window chosen at
+  setup, processed oldest first so item statuses move forward in order.
+  After that: everything since a day before the last sync started. Mail
+  already judged against every current topic version is skipped before
+  it's fetched, so the overlap costs one list call.
+- `last_sync_at` only advances when a sync finishes. A sync stopped by the
+  spend cap, a Jev error, Gmail or `--limit` is simply resumed next time.
 - Judging uses jevfilter's staged mode (`speculative=False`): most mail
   matches no topic, so membership is asked first.
 - Labels: a match gets `<label>` and `<label>/<category>`. Labels can be
@@ -325,7 +335,10 @@ right-hand context pane.
   yes, when a topic has one), items gone quiet, items that moved this week.
 - **Needs you** — the review cards. Pane: the email itself (fetched from
   Gmail), Jev's confidence against the topic's thresholds, what it would
-  do on "yes", and the answer (Yes / No, or which item / new).
+  do on "yes", and the answer (Yes / No, or which item / new). Topic
+  reviews show every field as an input, prefilled with Jev's value and
+  suggesting the candidates it weighed; what the person types overrides
+  Jev's value for the item and its matching, and is kept in the decision.
 - **Everything** — all judged mail with filters (all, matched, needs you,
   not in a topic, per topic), search, paging. Pane: the verdict per
   matched topic (category, details, flags, labels), other topics' scores,

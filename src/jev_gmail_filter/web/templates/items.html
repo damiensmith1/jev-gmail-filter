@@ -60,7 +60,7 @@
   <div class="stack">
     <div class="label">Emails</div>
     {% for e in x.emails %}
-    <div class="row" style="align-items: baseline"><span class="meta" style="width: 52px; flex-shrink: 0">{{ e.date }}</span><span class="ellipsis grow"><span class="ellipsis" style="display: block">{{ e.subject }}</span>{% if e.category %}<span class="small muted">{{ e.category }}</span>{% endif %}</span></div>
+    <div class="row" style="align-items: baseline"><span class="meta" style="width: 52px; flex-shrink: 0">{{ e.date }}</span><a class="ellipsis grow" href="/emails?selected={{ e.gmail_id }}" title="View this email"><span class="ellipsis" style="display: block">{{ e.subject }}</span>{% if e.category %}<span class="small muted">{{ e.category }}</span>{% endif %}</a><a class="small muted" href="{{ e.thread }}" target="_blank" rel="noopener" title="Open in Gmail">Gmail ↗</a></div>
     {% else %}<div class="small muted">No emails linked yet.</div>{% endfor %}
   </div>
   <form method="post" action="/items/{{ x.id }}/notes" class="field">

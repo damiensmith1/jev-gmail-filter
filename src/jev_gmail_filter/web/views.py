@@ -267,6 +267,25 @@ def review_detail(store: Store, topics: jf.Topics, r: Any) -> dict:
             k: v.get("value") for k, v in (s.get("fields") or {}).items() if v.get("value")
         }
         out["missing"] = [x.split(":", 1)[1] for x in r.reasons if x.startswith("field_missing:")]
+        # Every field of the topic, editable: Jev's value (if any) prefilled,
+        # the candidates it weighed offered as suggestions.
+        found = s.get("fields") or {}
+        out["edit"] = [
+            {
+                "name": name,
+                "value": (found.get(name) or {}).get("value") or "",
+                "missing": name in out["missing"],
+                "suggest": [
+                    c
+                    for c, _ in sorted(
+                        ((found.get(name) or {}).get("probabilities") or {}).items(),
+                        key=lambda kv: -kv[1],
+                    )
+                    if c != "none of these"
+                ][:8],
+            }
+            for name in (topic.fields if topic else {})
+        ]
     else:
         match = r.suggestion.get("match", {})
         probs = match.get("probabilities", {})
@@ -478,6 +497,8 @@ def item_detail(store: Store, topic: jf.Topic, item: Item, now: datetime | None 
         "emails": [
             {
                 "date": clock(e["received_at"], now),
+                "gmail_id": e["gmail_id"],
+                "thread": gmail_link(e["thread_id"]),
                 "subject": e["subject"],
                 "category": e["category"] or "",
             }

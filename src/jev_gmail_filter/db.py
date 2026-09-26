@@ -246,7 +246,8 @@ class Store:
 
     def item_emails(self, item_id: int) -> list[dict[str, Any]]:
         rows = self._db.execute(
-            "SELECT e.subject, e.sender, e.received_at, ie.category FROM item_emails ie "
+            "SELECT e.gmail_id, e.thread_id, e.subject, e.sender, e.received_at, ie.category "
+            "FROM item_emails ie "
             "JOIN emails e ON e.gmail_id = ie.gmail_id WHERE ie.item_id = ? "
             "ORDER BY e.received_at DESC",
             (item_id,),

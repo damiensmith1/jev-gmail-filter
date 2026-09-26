@@ -128,9 +128,12 @@ def create_app(
     async def resolve(request: Request, review_id: int) -> Response:
         form = await request.form()
         decision = str(form.get("decision", ""))
+        fields = {
+            k.removeprefix("field-"): str(v) for k, v in form.items() if k.startswith("field-")
+        }
         with rt.store() as s:
             try:
-                message = rt.pipeline(s).resolve(review_id, decision)
+                message = rt.pipeline(s).resolve(review_id, decision, fields)
             except (ValueError, SetupError) as e:
                 message = str(e)
         return back(request, "/needs", flash=message, selected=None)

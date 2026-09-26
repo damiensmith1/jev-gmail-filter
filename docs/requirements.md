@@ -46,7 +46,9 @@ status: draft
 - **F6 — Stale / follow-up.** Flag items with no email for the topic's
   stale window (jobs: 21 days).
 - **F7 — Review queue.** Low-confidence judgments go to the user instead
-  of being silently applied. Resolving one records the user's decision.
+  of being silently applied. Resolving one records the user's decision,
+  and lets them fill in or correct the topic's fields (e.g. a company Jev
+  couldn't find) before it's applied.
 - **F8 — Manual items.** Add or edit an item by hand.
 - **F9 — View.** Local web UI: per-topic lists and item pipelines, the
   review queue, recent emails, and topic editing.
