@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% block main %}
-<header class="page-head"><div><h1>Settings</h1><div class="sub">Everything stays on this computer, in <span class="meta">{{ data_dir }}</span>.</div></div></header>
+<header class="page-head"><div><h1>Settings</h1><div class="sub">Everything stays on this computer, in <span class="mono">{{ data_dir }}</span>.</div></div></header>
 
 <form method="post" action="/settings" class="card card-pad stack" style="gap: 16px">
   <h2>Syncing</h2>
