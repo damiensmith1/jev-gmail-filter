@@ -254,6 +254,18 @@ class Store:
         with self._db:
             self._db.execute("UPDATE items SET notes = ? WHERE id = ?", (notes, item_id))
 
+    def topic_stats(self, topic: str) -> dict[str, Any]:
+        """Matches, the latest matching email's date, and open reviews for a topic."""
+        row = self._db.execute(
+            "SELECT COUNT(DISTINCT r.gmail_id), MAX(e.received_at) FROM results r "
+            "JOIN emails e ON e.gmail_id = r.gmail_id WHERE r.topic = ? AND r.outcome = 'match'",
+            (topic,),
+        ).fetchone()
+        reviews = self._db.execute(
+            "SELECT COUNT(*) FROM reviews WHERE topic = ? AND resolved = 0", (topic,)
+        ).fetchone()[0]
+        return {"matches": row[0] or 0, "last_match": row[1], "reviews": reviews}
+
     def email_count(self) -> int:
         return self._db.execute("SELECT COUNT(*) FROM emails").fetchone()[0]
 

@@ -248,6 +248,8 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 - `pipeline.py` — email → jevfilter (staged) → items / statuses → storage,
   labels, review queue; sync; stale refresh; resolving reviews
 - `onboarding.py` — the setup steps, shared by `init` and the UI wizard
+- `topic_form.py` — topic ↔ editor form (pure, round-trips exactly), starters
+- `topics_ui.py` — the Topics page and editor
 - `cli.py` — `ui`, `init`, `sync`, `watch`, `review`, `items`, `labels`, `status`
 - `app.py` — the Streamlit web UI (below)
 
@@ -306,8 +308,21 @@ local only.
 - **Items** — per tracked topic, a column per status; stale items flagged;
   details (linked emails, manual status change, notes); add an item by hand
 - **Emails** — recent emails with the topics and categories they matched
-- **Topics** — edit the YAML (validated before saving), create a topic
-  from a name, description and optional categories, delete, rescan
+- **Topics** — a card per topic (what it's about, what it pulls out,
+  label, matches, last match, open reviews) with Edit / Delete, and **New
+  topic** from blank, a quick starter (Travel, Bills, School, Orders) or a
+  shipped example. The editor is a form in plain words, mapped to the
+  jevfilter format by `topic_form.py`: name, "What belongs", "Not this",
+  examples; tables for categories (with examples / not-this), "Details to
+  pull out" (fields: kind, required), yes/no flags; "Track as items"
+  (match on, statuses with the categories that move them, closed
+  statuses, gone-quiet days); Gmail label; Advanced (threshold sliders and
+  raw YAML, which can be applied back to the form). Parts the form doesn't
+  cover (scores, `when`, nested categories, custom facets) are kept as-is.
+  Problems are shown in plain language and block Save. **Try it** runs the
+  unsaved topic on a recent email or pasted text (one Jev call, nothing
+  saved). Saving an unchanged topic keeps its version exactly; a changed
+  or new topic offers a rescan.
 - **Settings** — labels on/off (turning on labels past matches), spend cap
   per sync, auto-sync interval, which Gmail categories to read (with
   per-category counts on request and a rescan offer when categories are

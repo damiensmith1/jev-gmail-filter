@@ -149,28 +149,10 @@ def test_pages_after_setup(env, tmp_path):
     assert at.dataframe[0].value.shape[0] == 3
 
     at.sidebar.radio[0].set_value("Topics").run()
-    assert {e.label for e in at.expander} >= {"Jobs", "Receipts", "➕ New topic"}
+    assert {"### Jobs", "### Receipts"} <= {m.value for m in at.markdown}
 
     at.sidebar.radio[0].set_value("Settings").run()
     assert "me@example.com" in texts(at) and "my-proj" in texts(at)
-
-
-def test_create_topic_validates(env, tmp_path):
-    s = finish_setup(tmp_path, env)
-    at = app()
-    at.sidebar.radio[0].set_value("Topics").run()
-    form_inputs = [t for t in at.text_input if t.label == "Name"]
-    form_inputs[0].set_value("Travel")
-    [a for a in at.text_area if a.label.startswith("What belongs")][0].set_value(
-        "Flight and hotel bookings."
-    )
-    [a for a in at.text_area if a.label.startswith("Categories")][0].set_value(
-        "booking: Confirms a booking.\nchange"
-    )
-    next(b for b in at.button if b.label == "Create").click().run()
-    topic = jf.Topic.load(s.topics_dir)["Travel"]
-    assert topic.categories["booking"].description == "Confirms a booking."
-    assert topic.categories["change"].description == "change"
 
 
 def test_labels_toggle_labels_past_matches(env, tmp_path):

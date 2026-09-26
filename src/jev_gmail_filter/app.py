@@ -15,9 +15,8 @@ from typing import Any
 
 import jevfilter as jf
 import streamlit as st
-import yaml
 
-from jev_gmail_filter import onboarding
+from jev_gmail_filter import onboarding, topics_ui
 from jev_gmail_filter.config import load_settings
 from jev_gmail_filter.db import Store
 from jev_gmail_filter.gmail import (
@@ -552,85 +551,17 @@ def page_emails() -> None:
 
 
 def page_topics() -> None:
-    st.title("Topics")
-    s = settings()
-    st.caption(
-        f"Stored as YAML in `{s.topics_dir}`. Editing a topic makes older mail "
-        "eligible to be judged again (Rescan below)."
+    topics_ui.render(
+        topics_ui.Ctx(
+            settings=settings,
+            store=store,
+            source=source,
+            start_scan=start_scan,
+            scanning=scanning,
+            meta=meta,
+            when=when,
+        )
     )
-    files = onboarding.topic_files(s)
-    for name, path in files.items():
-        with st.expander(name):
-            text = st.text_area("Definition", path.read_text(), height=300, key=f"yaml-{name}")
-            save, delete = st.columns([1, 1])
-            if save.button("Save", key=f"save-{name}", type="primary"):
-                save_topic(path, text)
-            if delete.checkbox("Delete this topic", key=f"del-{name}") and delete.button(
-                "Confirm delete", key=f"delok-{name}"
-            ):
-                path.unlink()
-                st.rerun()
-    with st.expander("➕ New topic"):
-        with st.form("new-topic"):
-            name = st.text_input("Name", placeholder="Travel")
-            desc = st.text_area(
-                "What belongs, in plain English",
-                placeholder="Flight, hotel and train bookings for my trips.",
-            )
-            cats = st.text_area(
-                "Categories (optional, one per line as `name: description`)",
-                placeholder="booking: Confirms a booking.\nchange: A change or cancellation.",
-            )
-            if st.form_submit_button("Create", type="primary"):
-                create_topic(name, desc, cats)
-    rescan()
-
-
-def save_topic(path: Any, text: str) -> None:
-    try:
-        data = yaml.safe_load(text)
-        jf.Topic.load(data)
-    except (yaml.YAMLError, jf.TopicError, TypeError) as e:
-        st.error(f"Not saved: {e}")
-        return
-    path.write_text(text)
-    st.toast("Saved")
-    st.rerun()
-
-
-def create_topic(name: str, desc: str, cats: str) -> None:
-    data: dict[str, Any] = {"name": name.strip(), "description": desc.strip()}
-    categories = {}
-    for line in cats.splitlines():
-        if line.strip():
-            key, _, text = line.partition(":")
-            categories[key.strip()] = text.strip() or key.strip()
-    if categories:
-        data["categories"] = categories
-    try:
-        topic = jf.Topic.from_dict(data)
-    except jf.TopicError as e:
-        st.error("Not created:\n" + "\n".join(f"- {p}" for p in e.problems))
-        return
-    path = settings().topics_dir / onboarding.topic_filename(topic.name)
-    if path.exists() or topic.name in onboarding.topic_files(settings()):
-        st.error(f"A topic called {topic.name!r} already exists.")
-        return
-    path.write_text(topic.to_yaml())
-    st.toast(f"Created {topic.name}")
-    st.rerun()
-
-
-def rescan() -> None:
-    st.subheader("Rescan")
-    st.caption(
-        "Judge older mail against topics it hasn't been judged against "
-        "(new or edited topics). Mail already judged is skipped."
-    )
-    days = st.number_input("Days back", min_value=1, max_value=365, value=14)
-    if st.button("Rescan", disabled=scanning()):
-        start_scan("Rescan", since=datetime.now(UTC) - timedelta(days=days))
-        st.rerun()
 
 
 CATEGORY_HELP = {
