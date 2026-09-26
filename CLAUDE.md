@@ -31,7 +31,7 @@ future work, not core.
 - `uv run pytest` — tests (never call Jev or Gmail)
 - `uv run ruff check . && uv run ruff format .` — lint / format
 - `uv run jev-gmail-filter ui` — the web UI (Streamlit, `src/jev_gmail_filter/app.py`)
-- `uv run jev-gmail-filter init|sync|watch|review|items|labels|status` — the CLI
+- `uv run jev-gmail-filter init|sync|watch|review|items|labels|categories|status` — the CLI
 
 Package `src/jev_gmail_filter/`; example topics in `topics/examples/`
 (must stay valid jevfilter topics; a test checks). User data (OAuth client,

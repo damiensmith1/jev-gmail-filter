@@ -203,3 +203,14 @@ def test_recheck_button(env, tmp_path, monkeypatch):
     button(at, "Re-check all 1 with the latest topics").click().run()
     wait_for_scan(at)
     assert "Judged **1**" in texts(at)
+
+
+def test_settings_categories(env, tmp_path):
+    s = finish_setup(tmp_path, env)
+    at = app()
+    at.sidebar.radio[0].set_value("Settings").run()
+    next(c for c in at.checkbox if c.key == "cat-updates").check().run()
+    button(at, "Save categories").click().run()
+    with Store(s.db_path) as st:
+        assert st.get_meta("categories") == "primary,updates"
+    assert "New mail in Updates is read from now on" in texts(at)

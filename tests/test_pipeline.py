@@ -269,3 +269,24 @@ def test_recheck_reviews_rejudges_with_current_topics(store, mail, topics):
     r = Pipeline(store, mail, topics, judge=judge()).recheck_reviews()
     assert r.judged == 1 and r.matched == {"Jobs": 1}
     assert store.reviews() == [] and len(store.items("Jobs")) == 1
+
+
+def test_only_chosen_categories_are_read(pipeline, mail, store):
+    mail.emails["p"] = email("p", "[jobs] Acme", "cat=applied Acme", days_ago=2)
+    mail.emails["u"] = email(
+        "u",
+        "[jobs] Initech",
+        "cat=applied Initech",
+        days_ago=2,
+        category="updates",
+        sender="I <hr@initech.example>",
+    )
+    mail.emails["x"] = email("x", "Sale!", "50% off", days_ago=2, category="promotions")
+    r = pipeline.sync()
+    assert r.scanned == 1 and "category:primary" in mail.queries[-1]
+    store.set_meta("categories", "primary,updates")
+    r = pipeline.sync(since=NOW - timedelta(days=7))
+    assert r.judged == 1 and r.skipped == 1  # the Updates email; Primary already done
+    mail.deliver(email("u2", "[jobs] Initech 2", "x", category="updates", days_ago=0))
+    mail.deliver(email("x2", "Sale again", "x", category="promotions", days_ago=0))
+    assert pipeline.sync().scanned == 1  # history keeps only chosen categories

@@ -10,7 +10,8 @@ quiet. Judging is done by [jevfilter](https://github.com/damiensmith1/jevfilter)
 with TypeSafe's Jev.
 
 Self-hosted and local: your email, topics and database stay on your machine.
-Only your Primary inbox is read.
+By default only your Primary inbox tab is read; add Updates, Promotions and
+Gmail's other categories in Settings.
 
 > Early development: works end to end, not yet battle-tested on many inboxes.
 
@@ -46,7 +47,7 @@ topics, and the SQLite database.
 In the web UI (`uv run jev-gmail-filter ui`): an overview with **Sync
 now**, the **Review** queue, your tracked **Items** as a board per status,
 recent **Emails**, **Topics** (edit, add, rescan) and **Settings** (labels,
-spend cap, auto-sync, sign out).
+spend cap, auto-sync, which Gmail categories to read, sign out).
 
 Or from the terminal:
 
@@ -58,6 +59,7 @@ uv run jev-gmail-filter review 3 yes  # ...and resolve one
 uv run jev-gmail-filter items         # tracked items and their status
 uv run jev-gmail-filter items --stale # the ones that have gone quiet
 uv run jev-gmail-filter labels        # after a dry run: turn labels on
+uv run jev-gmail-filter categories primary,updates  # which Gmail categories to read
 uv run jev-gmail-filter status        # setup and total spend
 ```
 

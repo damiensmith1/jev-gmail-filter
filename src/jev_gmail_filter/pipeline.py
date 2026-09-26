@@ -17,7 +17,7 @@ from jevfilter import track
 
 from . import candidates
 from .db import Item, Store
-from .gmail import HistoryExpired, MailSource, primary_query
+from .gmail import HistoryExpired, MailSource, inbox_query, parse_categories
 from .mail import Email
 
 DEFAULT_BACKSCAN = timedelta(days=14)
@@ -240,24 +240,25 @@ class Pipeline:
         resumed (already-judged mail is skipped).
         """
         report = SyncReport()
+        categories = self.categories()
         saved = self.store.get_meta("history_id")
         if since is not None or saved is None:
             start = self.source.history_id()
             chosen = self.store.get_meta("backscan_days")  # the window picked at setup
             window = timedelta(days=float(chosen)) if chosen else DEFAULT_BACKSCAN
             after = since or datetime.now(UTC) - window
-            ids = list(reversed(list(self.source.search(primary_query(after)))))  # oldest first
+            ids = list(reversed(list(self.source.search(inbox_query(categories, after)))))
             new_history = start
         else:
             try:
-                ids, new_history = self.source.new_since(saved)
+                ids, new_history = self.source.new_since(saved, categories)
             except HistoryExpired:
                 last = self.store.get_meta("last_sync_at")
                 after = (
                     datetime.fromisoformat(last) if last else datetime.now(UTC) - DEFAULT_BACKSCAN
                 ) - timedelta(days=1)
                 new_history = self.source.history_id()
-                ids = list(reversed(list(self.source.search(primary_query(after)))))
+                ids = list(reversed(list(self.source.search(inbox_query(categories, after)))))
 
         truncated = limit is not None and len(ids) > limit
         if truncated:
@@ -287,6 +288,10 @@ class Pipeline:
             self.store.set_meta("last_sync_at", datetime.now(UTC).isoformat())
         self.refresh_stale()
         return report
+
+    def categories(self) -> tuple[str, ...]:
+        """The Gmail inbox categories this app reads (Settings; default Primary only)."""
+        return parse_categories(self.store.get_meta("categories"))
 
     def refresh_stale(self, now: datetime | None = None) -> int:
         """Recompute stale flags for tracked items. Returns how many are stale."""

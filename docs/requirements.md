@@ -52,6 +52,8 @@ status: draft
   review queue, recent emails, and topic editing.
 - **F10 — Rescan.** Re-run a topic over a chosen window after creating or
   editing it (with a cost estimate first).
+- **F11 — Choose what to read.** Pick which Gmail inbox categories are
+  read (Primary by default; Updates, Promotions, Social, Forums optional).
 
 ## Non-functional
 

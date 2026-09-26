@@ -13,8 +13,24 @@ from jev_gmail_filter.mail import Email
 NOW = datetime.now(UTC)
 
 
+CATEGORY_LABELS = {
+    "primary": "CATEGORY_PERSONAL",
+    "updates": "CATEGORY_UPDATES",
+    "promotions": "CATEGORY_PROMOTIONS",
+    "social": "CATEGORY_SOCIAL",
+    "forums": "CATEGORY_FORUMS",
+}
+
+
 def email(
-    id, subject, body="", *, sender="Acme Careers <jobs@acme.example>", thread=None, days_ago=1.0
+    id,
+    subject,
+    body="",
+    *,
+    sender="Acme Careers <jobs@acme.example>",
+    thread=None,
+    days_ago=1.0,
+    category="primary",
 ) -> Email:
     return Email(
         id,
@@ -24,10 +40,17 @@ def email(
         NOW - timedelta(days=days_ago),
         body,
         snippet=body[:50],
+        label_ids=("INBOX", CATEGORY_LABELS[category]),
     )
 
 
+def _in(e: Email, categories) -> bool:
+    return categories is None or any(CATEGORY_LABELS[c] in e.label_ids for c in categories)
+
+
 class FakeMail:
+    """Behaves like Gmail: category-aware search, history, labels."""
+
     def __init__(self, emails=(), address="me@example.com"):
         self.emails = {e.id: e for e in emails}
         self.addr = address
@@ -36,6 +59,7 @@ class FakeMail:
         self.labels: dict[str, list[str]] = {}
         self.expired = False
         self.fetched: list[str] = []
+        self.queries: list[str] = []
 
     def address(self):
         return self.addr
@@ -44,19 +68,24 @@ class FakeMail:
         return str(self.history)
 
     def search(self, query):
+        self.queries.append(query)
         m = re.search(r"after:(\d+)", query)
         after = datetime.fromtimestamp(int(m.group(1)), tz=UTC) if m else None
-        found = [e for e in self.emails.values() if after is None or e.date > after]
+        cats = re.findall(r"category:(\w+)", query) or None
+        found = [
+            e for e in self.emails.values() if (after is None or e.date > after) and _in(e, cats)
+        ]
         return iter(e.id for e in sorted(found, key=lambda e: e.date, reverse=True))
 
     def get(self, message_id):
         self.fetched.append(message_id)
         return self.emails[message_id]
 
-    def new_since(self, history_id):
+    def new_since(self, history_id, categories=("primary",)):
         if self.expired:
             raise HistoryExpired()
-        ids, self.pending = self.pending, []
+        ids = [i for i in self.pending if _in(self.emails[i], categories)]
+        self.pending = []
         return ids, str(self.history)
 
     def add_labels(self, message_id, names):

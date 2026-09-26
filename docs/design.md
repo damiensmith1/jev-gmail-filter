@@ -309,7 +309,9 @@ local only.
 - **Topics** — edit the YAML (validated before saving), create a topic
   from a name, description and optional categories, delete, rescan
 - **Settings** — labels on/off (turning on labels past matches), spend cap
-  per sync, auto-sync interval, sign out
+  per sync, auto-sync interval, which Gmail categories to read (with
+  per-category counts on request and a rescan offer when categories are
+  added), sign out
 
 ## Status
 
@@ -352,8 +354,11 @@ which cuts cost when most mail matches no topic, and category examples).
   client for now; Google verification of a shared one may come later.
 - User topics live in `data/topics/` (gitignored), not the repo, so
   personal topics never end up in a commit; the repo ships only examples.
-- Scan the Primary inbox only — skip Promotions, Social, Updates,
-  Forums, Spam, Sent, Drafts. Jev is only called for new messages there.
+- Read the Primary inbox category by default; the user can add Updates,
+  Promotions, Social and Forums in Settings (or `categories`). Spam, Sent
+  and Drafts are never read. Jev is only called for new messages in the
+  chosen categories. (First real run: 124 Primary vs 153 in the whole
+  inbox over 14 days; the rest were Gmail-categorised as Updates etc.)
 - Claude summaries are future work, after the core is locked.
 - Start fresh: the jobs-only prototype was deleted rather than
   generalized.

@@ -19,8 +19,15 @@ from typing import Any, Protocol
 from .mail import Email, parse_message
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
-PRIMARY = "in:inbox category:primary"
-PRIMARY_LABEL = "CATEGORY_PERSONAL"  # Gmail's internal id for the Primary tab
+# Gmail's inbox categories (tabs): key → (name, Gmail's internal label id).
+CATEGORIES = {
+    "primary": ("Primary", "CATEGORY_PERSONAL"),
+    "updates": ("Updates", "CATEGORY_UPDATES"),
+    "promotions": ("Promotions", "CATEGORY_PROMOTIONS"),
+    "social": ("Social", "CATEGORY_SOCIAL"),
+    "forums": ("Forums", "CATEGORY_FORUMS"),
+}
+DEFAULT_CATEGORIES: tuple[str, ...] = ("primary",)
 RETRIES = 6
 """Gmail limits requests per user per minute. On a rate-limit (or 5xx) answer the
 Google client waits with exponential backoff and retries: up to ~2 minutes in all."""
@@ -85,13 +92,36 @@ class MailSource(Protocol):
     def history_id(self) -> str: ...
     def search(self, query: str) -> Iterator[str]: ...
     def get(self, message_id: str) -> Email: ...
-    def new_since(self, history_id: str) -> tuple[list[str], str]: ...
+    def new_since(
+        self, history_id: str, categories: tuple[str, ...] = DEFAULT_CATEGORIES
+    ) -> tuple[list[str], str]: ...
     def add_labels(self, message_id: str, names: list[str]) -> None: ...
 
 
+def parse_categories(value: str | None) -> tuple[str, ...]:
+    """Stored setting ("primary,updates") → valid category keys, in a stable order."""
+    chosen = {c.strip().lower() for c in (value or "").split(",") if c.strip()}
+    unknown = chosen - set(CATEGORIES)
+    if unknown:
+        raise ValueError(f"unknown Gmail categories {sorted(unknown)}; use {', '.join(CATEGORIES)}")
+    return tuple(c for c in CATEGORIES if c in chosen) or DEFAULT_CATEGORIES
+
+
+def inbox_query(
+    categories: tuple[str, ...] = DEFAULT_CATEGORIES, after: datetime | None = None
+) -> str:
+    """Gmail search for the chosen inbox categories, optionally only after a date."""
+    if set(categories) >= set(CATEGORIES):
+        query = "in:inbox"  # everything, including mail Gmail left uncategorised
+    elif len(categories) == 1:
+        query = f"in:inbox category:{categories[0]}"
+    else:
+        query = "in:inbox (" + " OR ".join(f"category:{c}" for c in categories) + ")"
+    return query + (f" after:{int(after.timestamp())}" if after else "")
+
+
 def primary_query(after: datetime | None = None) -> str:
-    """Gmail search for the Primary inbox, optionally only after a date."""
-    return PRIMARY + (f" after:{int(after.timestamp())}" if after else "")
+    return inbox_query(DEFAULT_CATEGORIES, after)
 
 
 # -- sign-in ------------------------------------------------------------------
@@ -192,8 +222,12 @@ class GmailSource:
         request = self._svc.users().messages().get(userId="me", id=message_id, format="full")
         return parse_message(self._call("get", request))
 
-    def new_since(self, history_id: str) -> tuple[list[str], str]:
-        """Primary-inbox messages added since `history_id`, and the new id."""
+    def new_since(
+        self, history_id: str, categories: tuple[str, ...] = DEFAULT_CATEGORIES
+    ) -> tuple[list[str], str]:
+        """Inbox messages in `categories` added since `history_id`, and the new id."""
+        everything = set(categories) >= set(CATEGORIES)
+        wanted = {CATEGORIES[c][1] for c in categories}
         from googleapiclient.errors import HttpError
 
         ids: list[str] = []
@@ -220,7 +254,8 @@ class GmailSource:
             for h in res.get("history", []):
                 for added in h.get("messagesAdded", []):
                     msg = added["message"]
-                    if PRIMARY_LABEL in msg.get("labelIds", []) and msg["id"] not in ids:
+                    labels = set(msg.get("labelIds", []))
+                    if (everything or labels & wanted) and msg["id"] not in ids:
                         ids.append(msg["id"])
             latest = str(res.get("historyId", latest))
             token = res.get("nextPageToken")

@@ -15,7 +15,15 @@ import jevfilter as jf
 
 from .config import EXAMPLE_TOPICS, Settings
 from .db import Store
-from .gmail import GmailSource, MailSource, SetupError, authorize, check_client_file, primary_query
+from .gmail import (
+    DEFAULT_CATEGORIES,
+    GmailSource,
+    MailSource,
+    SetupError,
+    authorize,
+    check_client_file,
+    inbox_query,
+)
 
 BACKSCAN_DAYS = {"1 day": 1.0, "1 week": 7.0, "2 weeks": 14.0, "1 month": 30.0}
 
@@ -184,11 +192,17 @@ class Estimate:
     high_usd: float
 
 
-def estimate(source: MailSource, topics: jf.Topics, days: float, sample: int = 5) -> Estimate:
-    """How many Primary emails in the window, and the cost range: membership only
+def estimate(
+    source: MailSource,
+    topics: jf.Topics,
+    days: float,
+    sample: int = 5,
+    categories: tuple[str, ...] = DEFAULT_CATEGORIES,
+) -> Estimate:
+    """How many emails in the window (chosen categories), and the cost range: membership only
     (low) up to every topic matching (high). Makes no Jev calls."""
     since = datetime.now(UTC) - timedelta(days=days)
-    ids = list(source.search(primary_query(since)))
+    ids = list(source.search(inbox_query(categories, since)))
     if not ids:
         return Estimate(since, ids, 0.0, 0.0)
     f = jf.Filter(topics, judge=_NoCalls(), speculative=False)

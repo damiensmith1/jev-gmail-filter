@@ -195,3 +195,36 @@ def test_every_call_is_paced():
     list(s.search("q"))
     # labels.list 1 + modify 5 + two search pages 5 each
     assert sum(u for _, u in s.pacer._spent) == 1 + 5 + 10
+
+
+def test_inbox_query_and_categories():
+    from jev_gmail_filter.gmail import inbox_query, parse_categories
+
+    assert inbox_query(("primary",)) == "in:inbox category:primary"
+    assert inbox_query(("primary", "updates")) == "in:inbox (category:primary OR category:updates)"
+    everything = ("primary", "updates", "promotions", "social", "forums")
+    assert inbox_query(everything) == "in:inbox"
+    assert parse_categories(None) == ("primary",)
+    assert parse_categories("updates, Primary") == ("primary", "updates")
+    with pytest.raises(ValueError, match="unknown Gmail categories"):
+        parse_categories("spam")
+
+
+def test_new_since_filters_by_chosen_categories():
+    stub = StubService()
+    page = {
+        "history": [
+            {
+                "messagesAdded": [
+                    {"message": {"id": "p", "labelIds": ["INBOX", "CATEGORY_PERSONAL"]}},
+                    {"message": {"id": "u", "labelIds": ["INBOX", "CATEGORY_UPDATES"]}},
+                    {"message": {"id": "n", "labelIds": ["INBOX"]}},
+                ]
+            }
+        ],
+        "historyId": "9",
+    }
+    stub.history_pages = [dict(page), dict(page)]
+    assert source(stub).new_since("1", ("primary", "updates"))[0] == ["p", "u"]
+    everything = ("primary", "updates", "promotions", "social", "forums")
+    assert source(stub).new_since("1", everything)[0] == ["p", "u", "n"]

@@ -20,7 +20,13 @@ import yaml
 from jev_gmail_filter import onboarding
 from jev_gmail_filter.config import load_settings
 from jev_gmail_filter.db import Store
-from jev_gmail_filter.gmail import MailSource, SetupError
+from jev_gmail_filter.gmail import (
+    CATEGORIES,
+    MailSource,
+    SetupError,
+    inbox_query,
+    parse_categories,
+)
 from jev_gmail_filter.pipeline import Pipeline, SyncReport
 
 PAGES = ["Overview", "Review", "Items", "Emails", "Topics", "Settings"]
@@ -301,7 +307,10 @@ def step_topics(done: bool) -> None:
 
 def step_scan(done: bool) -> None:
     s = settings()
-    st.write("How far back should the first scan go? Only your Primary inbox is read.")
+    st.write(
+        "How far back should the first scan go? Only your Primary tab is read; you can "
+        "add Updates, Promotions and the other Gmail categories later in Settings."
+    )
     choice = st.radio(
         "Scan back",
         [*onboarding.BACKSCAN_DAYS, "Custom"],
@@ -624,6 +633,58 @@ def rescan() -> None:
         st.rerun()
 
 
+CATEGORY_HELP = {
+    "primary": "Personal and important mail, the default.",
+    "updates": "Confirmations, receipts, bills, statements; some job platforms land here.",
+    "promotions": "Marketing and deals.",
+    "social": "Social networks and dating sites.",
+    "forums": "Mailing lists and discussion groups.",
+}
+
+
+def gmail_categories() -> None:
+    st.subheader("Which Gmail categories to read")
+    st.caption(
+        "Gmail sorts your inbox into these tabs, even if you've turned the tabs off. "
+        "Only the ones ticked here are judged; more categories cost more Jev."
+    )
+    current = parse_categories(meta("categories", "primary"))
+    counts = st.session_state.get("category_counts", {})
+    chosen = []
+    for key, (name, _) in CATEGORIES.items():
+        label = f"**{name}**: {CATEGORY_HELP[key]}"
+        if key in counts:
+            label += f" ({counts[key]} in the last 14 days)"
+        if st.checkbox(label, value=key in current, key=f"cat-{key}"):
+            chosen.append(key)
+    save, count = st.columns([1, 3])
+    if count.button("Count emails per category (last 14 days)"):
+        since = datetime.now(UTC) - timedelta(days=14)
+        with st.spinner("Counting…"):
+            st.session_state.category_counts = {
+                key: sum(1 for _ in source().search(inbox_query((key,), since)))
+                for key in CATEGORIES
+            }
+        st.rerun()
+    if save.button("Save categories", type="primary", disabled=not chosen):
+        set_meta("categories", ",".join(chosen))
+        st.session_state.categories_added = sorted(set(chosen) - set(current))
+        st.rerun()
+    added = st.session_state.get("categories_added")
+    if added:
+        names = ", ".join(CATEGORIES[k][0] for k in added)
+        st.info(
+            f"Saved. New mail in {names} is read from now on. To include older mail "
+            "from those categories, rescan:"
+        )
+        default = int(float(meta("backscan_days", "14")))
+        days = st.number_input("Days back", 1, 365, default, key="cat-rescan-days")
+        if st.button("Rescan now", disabled=scanning()):
+            st.session_state.pop("categories_added")
+            start_scan("Rescan", since=datetime.now(UTC) - timedelta(days=days))
+            st.rerun()
+
+
 def page_settings() -> None:
     st.title("Settings")
     s = settings()
@@ -653,6 +714,8 @@ def page_settings() -> None:
         set_meta("max_usd", f"{cap:g}")
         set_meta("auto_sync_minutes", str(int(minutes)))
         st.toast("Saved")
+    st.divider()
+    gmail_categories()
     st.divider()
     st.markdown(
         f"**Google account:** {meta('account', 'unknown')} "

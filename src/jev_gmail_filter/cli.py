@@ -100,6 +100,10 @@ def _parser() -> argparse.ArgumentParser:
     lab.add_argument("--off", action="store_true", help="stop writing labels")
     lab.set_defaults(run=cmd_labels)
 
+    c = sub.add_parser("categories", help="show or set which Gmail categories to read")
+    c.add_argument("categories", nargs="?", help="e.g. primary,updates (default: primary)")
+    c.set_defaults(run=cmd_categories)
+
     sub.add_parser("status", help="setup and spend").set_defaults(run=cmd_status)
     return p
 
@@ -373,6 +377,24 @@ def cmd_labels(args: argparse.Namespace, settings: Settings, connect: Connect | 
     p = _open(settings, connect, labels=True)
     p.store.set_meta("labels", "on")
     print(f"labels on; labelled {p.apply_labels_to_matches()} email(s) matched so far")
+    return 0
+
+
+def cmd_categories(args: argparse.Namespace, settings: Settings) -> int:
+    from .gmail import CATEGORIES, parse_categories
+
+    if not settings.db_path.exists():
+        raise SetupError("not set up yet; run `jev-gmail-filter init`")
+    with Store(settings.db_path) as store:
+        if args.categories:
+            chosen = parse_categories(args.categories)
+            store.set_meta("categories", ",".join(chosen))
+            print("reading: " + ", ".join(CATEGORIES[c][0] for c in chosen))
+            print("older mail in newly added categories: `jev-gmail-filter sync --since-days N`")
+        else:
+            chosen = parse_categories(store.get_meta("categories"))
+            print("reading: " + ", ".join(CATEGORIES[c][0] for c in chosen))
+            print("available: " + ", ".join(CATEGORIES))
     return 0
 
 

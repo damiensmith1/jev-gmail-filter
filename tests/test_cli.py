@@ -185,3 +185,13 @@ def test_nothing_to_review(settings, inbox, capsys):
     setup_done(settings, inbox)
     cli.cmd_review(SimpleNamespace(id=None, decision=None), settings)
     assert "nothing to review" in capsys.readouterr().out
+
+
+def test_categories_command(settings, inbox, capsys):
+    setup_done(settings, inbox)
+    cli.main(["--data-dir", str(settings.data_dir), "categories"])
+    assert "reading: Primary" in capsys.readouterr().out
+    cli.main(["--data-dir", str(settings.data_dir), "categories", "primary,updates"])
+    assert "reading: Primary, Updates" in capsys.readouterr().out
+    code = cli.main(["--data-dir", str(settings.data_dir), "categories", "spam"])
+    assert code == 2 and "unknown Gmail categories" in capsys.readouterr().err
