@@ -12,7 +12,8 @@ Thanks for helping. Changes come in through pull requests from forks:
   are blocked.
 - Every PR needs an approving review from the code owner
   ([@damiensmith1](https://github.com/damiensmith1)) and all review threads
-  resolved. A new push after approval needs a fresh approval.
+  resolved, and passing CI (lint, tests). A new push after approval
+  needs a fresh approval.
 - Only the maintainer can create branches or tags in this repository.
 - CI on PRs from outside contributors runs only after the maintainer
   approves it. Workflows get a read-only token.
