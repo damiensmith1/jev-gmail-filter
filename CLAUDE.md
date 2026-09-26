@@ -40,6 +40,11 @@ package / CLI name is an open question in `docs/design.md`).
   never add a CI step that calls the real API.
 - Classify each Gmail message once (keyed by message ID).
 - Commits are atomic and explain *why*. No co-author trailers.
+- **Public repo.** Before every commit, scan staged changes (including
+  binary files) for secrets, tokens, local paths, personal data and real
+  email content. Test data uses made-up people and `.example` domains.
+- `main` is protected by a ruleset (PR + code-owner review); only the repo
+  admin bypasses it. See CONTRIBUTING.md.
 
 ## Keeping docs in sync
 

@@ -5,3 +5,10 @@ __pycache__/
 data/
 credentials.json
 token.json
+*.sqlite
+*.db
+.coverage
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+dist/
