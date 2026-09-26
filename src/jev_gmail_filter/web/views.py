@@ -438,7 +438,10 @@ def items(
         return {"tracked": [], "topic": None}
     t = next((x for x in tracked if x.name == topic), tracked[0])
     assert t.track is not None
-    all_items = store.items(t.name)
+    # Most recent activity first; hand-added items with no email yet count as newest.
+    all_items = sorted(
+        store.items(t.name), key=lambda i: (i.last_email_at or "~", i.id), reverse=True
+    )
     pipeline = list(t.track.statuses)
     terminal = list(t.track.terminal)
 
