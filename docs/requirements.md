@@ -25,9 +25,11 @@ status: draft
 
 ## Functional
 
-- **F1 — First-run setup.** A guided flow that: connects Gmail, asks for
-  the Jev API key, lets the user **choose the backscan window** (how far
-  back to scan), and lets them start from example topics or a blank one.
+- **F1 — First-run setup.** A guided flow that: walks the user through
+  creating **their own Google OAuth client** step by step and connects
+  Gmail with it, asks for the Jev API key, lets the user **choose the
+  backscan window** (how far back to scan), and lets them start from
+  example topics or a blank one.
 - **F2 — Define topics easily.** A minimal topic is just a name and a
   description. Categories and tracking are optional additions. Topics can
   be created and edited in the web UI and are stored as plain files, so
@@ -59,6 +61,9 @@ status: draft
 - **Built on [jevfilter](https://github.com/damiensmith1/jevfilter).** All
   judging (questions, thresholds, item matching, tracking rules, spend
   caps) goes through the library; the app never calls Jev directly.
+- **Everyone brings their own Google OAuth client**, the maintainer
+  included. The project ships no shared client, so there is no app for
+  Google to verify and no one else's credentials are involved.
 - Secrets (`TYPESAFE_API_KEY`, Gmail OAuth client and token) stay local
   and gitignored; never logged.
 - **Cost-aware.** Each email is judged once per topic version. Show
@@ -80,5 +85,7 @@ status: draft
 ## Future (not core)
 
 - **Summaries with the Claude Agent SDK** — see [design](design.md#future-summaries-with-claude).
+- **A shared, Google-verified OAuth client** for one-click sign-in — see
+  [design](design.md#google-access). Not worth it right now.
 - Drafting replies or applications.
 - Other mail providers (IMAP).

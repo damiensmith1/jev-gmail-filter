@@ -173,14 +173,57 @@ result (useful later for tuning thresholds or topic wording).
 
 1. Check for `TYPESAFE_API_KEY`; prompt and write `.env` if missing. The
    app loads `.env` itself (jevfilter never reads files).
-2. Walk through creating a Google OAuth Desktop client; open the browser
-   to authorise; save the token.
+2. Walk the user through creating their own Google OAuth client (see
+   [Google access](#google-access)), then open the browser to authorise
+   and save the token.
 3. Pick starter topics: bundled examples (Jobs, Receipts, Travel, …) or
    blank.
 4. **Choose the backscan window** (e.g. 1 day / 1 week / 2 weeks / 1 month
    / custom), with an estimated email count and Jev cost.
 5. Dry run option: classify without writing Gmail labels, review results,
    then enable labels.
+
+## Google access
+
+Reading and labelling mail needs the `gmail.modify` scope, which Google
+classes as **restricted**. A single OAuth client shared by every user
+would have to pass Google's restricted-scope verification (verified
+domain, privacy policy, demo video, scope justification) before anyone
+outside a hand-picked test list could use it.
+
+So **everyone brings their own OAuth client**, the maintainer included.
+Each user is then the only user of their own Google app, which Google
+treats as personal use: no verification, and no one else's credentials
+involved. The cost is a one-time, ~10-minute setup, so `init` walks
+through it step by step:
+
+1. **Create a project** at <https://console.cloud.google.com> (any name).
+2. **Enable the Gmail API** for it (APIs & Services → Library → Gmail API).
+3. **Configure the consent screen** (Google Auth Platform): user type
+   *External*, any app name, your own email as support and developer
+   contact. Add the scope `https://www.googleapis.com/auth/gmail.modify`.
+4. **Publish the app to "In production"** (Audience). Left in "Testing",
+   Google expires the sign-in every 7 days. Publishing does not mean
+   verification: the app stays unverified, which is fine for personal use.
+5. **Create an OAuth client**: Clients → Create → *Desktop app*. Download
+   the JSON and give its path to `init` (it's copied into the app's data
+   folder as `credentials.json`, which is gitignored).
+6. **Sign in**: `init` opens the browser. Google shows "Google hasn't
+   verified this app" because it's your own unverified app: choose
+   *Advanced → Go to (your app name)*, then allow access. The token is
+   saved locally as `token.json` (gitignored) and refreshed automatically.
+
+`init` checks each step it can (the file is a Desktop client, the Gmail
+API responds, the granted scope is `gmail.modify`) and says exactly which
+step to revisit when something fails. Removing access later: revoke it at
+<https://myaccount.google.com/permissions> and delete `token.json`.
+
+**Later, possibly:** a shared, Google-verified client so users can sign
+in with one click and skip the setup. Because all data stays on the
+user's machine, Google's paid security assessment shouldn't apply, but
+verification still takes paperwork and weeks of review. Not worth it
+right now; the app reads whichever client file it's given, so switching
+later is a configuration change, not a rewrite.
 
 ## Code layout (target)
 
@@ -193,18 +236,12 @@ Built from scratch; nothing carries over from the discarded prototype.
 
 ## Depends on jevfilter
 
-Built in jevfilter 0.1.0: topics, `Filter.judge`, `explain`, thresholds
-and reasons, failure policy, serialisable results.
-
-Needed from jevfilter before this app can run end to end:
-
-| Need | jevfilter feature | Status |
-|------|-------------------|--------|
-| Match an email to an existing item | `match_item` | not built |
-| Status pipeline, stale detection | `track.next_status`, `track.is_stale` | not built |
-| Fast backscans | `AsyncFilter.judge_many` | not built |
-| Spend cap on backscans | `Budget` | not built |
-| Many topics per email without hitting limits | request packing / splitting | not built |
+Everything the app needs from jevfilter is built (jevfilter 0.2.0–0.4.0):
+topics, `Filter.judge` / `explain`, thresholds and reasons, failure
+policy, serialisable results, `match_item`, `track.*`,
+`AsyncFilter.judge_many`, `Budget`, and request packing / splitting.
+The app should depend on `jevfilter>=0.4` (0.4 adds staged judging,
+which cuts cost when most mail matches no topic, and category examples).
 
 ## Decisions
 
@@ -223,6 +260,9 @@ Needed from jevfilter before this app can run end to end:
   SQLite and topic files, so swapping later is cheap).
 - Jobs example: stale after 21 days; recruiter / HR / hiring-team contact
   matches an existing job or creates a new one (no separate "lead").
+- Everyone, the maintainer included, brings their own Google OAuth client
+  (Desktop app, `gmail.modify`), set up through a guided `init`. No shared
+  client for now; Google verification of a shared one may come later.
 - Scan the Primary inbox only — skip Promotions, Social, Updates,
   Forums, Spam, Sent, Drafts. Jev is only called for new messages there.
 - Claude summaries are future work, after the core is locked.
