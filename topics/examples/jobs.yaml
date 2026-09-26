@@ -1,0 +1,33 @@
+name: Jobs
+description: >
+  My own job search: applications I submitted, and recruiters, HR or
+  hiring teams contacting me about a specific role.
+exclude: Job alerts, recommendation digests, newsletters, marketing.
+
+categories:
+  applied: Confirms I submitted an application.
+  recruiter: A recruiter or hiring manager reaches out about a role.
+  hiring_contact: Other HR / hiring-team mail about a role — scheduling, follow-ups, info requests.
+  interview: Invites me to an interview or phone screen, or confirms/reschedules one.
+  assessment: Asks me to complete a take-home, coding test or online assessment.
+  rejection: Tells me I'm not moving forward.
+  offer: Extends an offer or discusses offer terms.
+
+fields:
+  company: {kind: org, about: "The hiring company, not a job board or ATS.", required: true}
+  role: {kind: title, about: The job title.}
+
+track:
+  match_on: [company]
+  statuses:
+    contacted: [recruiter]
+    applied: [applied]
+    assessment: [assessment]
+    interviewing: [interview]
+    offer: [offer]
+  terminal:
+    rejected: [rejection]
+  stale_after_days: 21
+
+meta:
+  gmail_label: Jobs

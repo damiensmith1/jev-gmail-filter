@@ -1,0 +1,11 @@
+name: Receipts
+description: Receipts, invoices and order confirmations for things I bought.
+exclude: Marketing, sales and newsletters from shops.
+categories:
+  order: Confirms an order or payment.
+  shipping: Shipping or delivery updates for an order.
+  refund: A refund or return.
+fields:
+  merchant: {kind: org, about: The shop or company I paid.}
+meta:
+  gmail_label: Receipts

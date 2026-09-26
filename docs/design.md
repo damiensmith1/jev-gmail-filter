@@ -169,8 +169,7 @@ result (useful later for tuning thresholds or topic wording).
 
 ## Setup flow (first run)
 
-App CLI `init` (name TBD, see open questions) or the first screen of the
-web UI:
+`jev-gmail-filter init` or the first screen of the web UI:
 
 1. Check for `TYPESAFE_API_KEY`; prompt and write `.env` if missing. The
    app loads `.env` itself (jevfilter never reads files).
@@ -185,7 +184,7 @@ web UI:
 
 ## Code layout (target)
 
-App package (name TBD): `gmail.py` (OAuth, polling, labels),
+Package `jev_gmail_filter` (CLI `jev-gmail-filter`): `gmail.py` (OAuth, polling, labels),
 `candidates.py` (extraction by field kind), `pipeline.py` (candidates →
 jevfilter → items → labels), `db.py`, `cli.py`, `app.py` (Streamlit).
 `topics/examples/` ships sample topics.
@@ -211,6 +210,7 @@ Needed from jevfilter before this app can run end to end:
 
 - Generic Gmail filter; jobs is one topic, not the product.
 - Open source, self-hosted, Python, SQLite. Licence: MIT.
+- An app, not a library: runs from a clone; not published to PyPI.
 - Judging core lives in the `jevfilter` library (own repo, on PyPI); this
   app is its first consumer and owns Gmail, storage and UI. The app never
   calls Jev directly.
@@ -231,7 +231,8 @@ Needed from jevfilter before this app can run end to end:
 
 ## Open questions
 
-- App package / CLI name (e.g. `jev-gmail-filter` / `jgf`?).
+- CLI name: named after the repo (`jev-gmail-filter`) for now; a shorter
+  alias could be added later.
 - Which candidate field kinds are needed beyond `org` / `title` (person,
   amount, date, order number)? If some are generic, they could move into
   jevfilter's extractors.

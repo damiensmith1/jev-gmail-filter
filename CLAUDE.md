@@ -8,8 +8,8 @@ emails in Gmail and, for tracked topics, stores **items** with a status
 pipeline and stale detection. Job search is the first example topic, not
 the product.
 
-No code yet: the app is being built from scratch from `docs/`. An
-earlier jobs-only prototype was discarded. Claude Agent SDK summaries are
+The app is being built from scratch from `docs/` (an earlier jobs-only
+prototype was discarded). So far: project scaffold, example topics, CI. Claude Agent SDK summaries are
 future work, not core.
 
 ## Context
@@ -26,12 +26,18 @@ future work, not core.
 
 ## Commands
 
-None yet. Add them here as the CLI, UI and test setup are built (app
-package / CLI name is an open question in `docs/design.md`).
+- `uv sync` — install
+- `uv run pytest` — tests (never call Jev or Gmail)
+- `uv run ruff check . && uv run ruff format .` — lint / format
+- `uv run jev-gmail-filter` — CLI (commands added as they're built)
+
+Package `src/jev_gmail_filter/`; example topics in `topics/examples/`
+(must stay valid jevfilter topics; a test checks).
 
 ## Conventions
 
-- Python, local, single user. Open source: keep setup simple and
+- Python ≥ 3.12, uv, local, single user. An app, not a library: it runs
+  from a clone and is not published to PyPI. Open source: keep setup simple and
   documented; no personal data, paths or keys in the repo.
 - Topics are configuration, not code — never hard-code a topic.
 - `TYPESAFE_API_KEY` and Gmail OAuth credentials/tokens live in `.env` /
