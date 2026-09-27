@@ -33,13 +33,16 @@
   {% endfor %}
 </div>
 {% else %}
-<section class="card">
+<div data-nav-list>
   {% for c in d.rows %}
-  <a class="list-row" href="{{ link(selected=c.id) }}" style="grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 140px 80px; text-decoration: none {% if d.selected and d.selected.id == c.id %}; background: var(--soft){% endif %}">
-    <span class="ellipsis" style="font-weight: 500">{{ c.title }}</span><span class="small muted ellipsis">{{ c.sub }}</span><span class="small">{{ c.status }}{% if c.stale %} <span class="chip chip-warn">Quiet</span>{% endif %}</span><span class="meta" style="text-align: right">{{ c.when }}</span>
+  <a class="email-row" href="{{ link(selected=c.id) }}" {% if d.selected and d.selected.id == c.id %}aria-current="true"{% endif %}>
+    <span class="ellipsis">{{ c.title }}</span>
+    <span class="ellipsis">{{ c.sub }}</span>
+    <span class="row ellipsis"><span class="chip">{{ c.status }}</span>{% if c.stale %}<span class="chip chip-warn">Quiet</span>{% endif %}</span>
+    <span class="meta" style="text-align: right">{{ c.when }}</span>
   </a>
   {% else %}<div class="empty">No items yet.</div>{% endfor %}
-</section>
+</div>
 {% endif %}
 {% endif %}
 {% endblock %}
