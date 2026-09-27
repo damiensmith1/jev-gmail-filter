@@ -5,7 +5,7 @@
   <div class="setup-grid">
     <div class="stack" style="gap: 28px">
       <div class="brand" style="padding: 0"><span class="brand-mark">j</span><span class="brand-name">jevfilter</span></div>
-      <div><h1 style="font-size: 26px; line-height: 1.15">Set up in about fifteen minutes</h1><div class="sub" style="margin-top: 8px">Everything stays on this computer.</div></div>
+      <div><h1 style="font-size: 22px; line-height: 1.15">Set up in about fifteen minutes</h1><div class="sub" style="margin-top: 8px">Everything stays on this computer.</div></div>
       <ol class="stepper" aria-label="Setup steps">
         {% for name, done in steps %}
         <li class="{{ 'done' if done }} {{ 'current' if loop.index0 == current }}" {% if loop.index0 == current %}aria-current="step"{% endif %}><span class="num">{{ "✓" if done else loop.index }}</span>{{ name }}</li>
@@ -18,7 +18,7 @@
       {% if flash %}<div class="banner bad small">{{ flash }}</div>{% endif %}
 
       {% if current == 0 %}
-      <h2 style="font-size: 19px">Your TypeSafe API key</h2>
+      <h2 style="font-size: 17px">Your TypeSafe API key</h2>
       <div class="muted">jevfilter uses TypeSafe's Jev to judge your email. The key is saved to <span class="meta">.env</span> in this folder, which git ignores.</div>
       <form method="post" action="/setup/key" class="stack">
         <label class="field"><span>API key</span><input class="input" type="password" name="key" autocomplete="off" required autofocus></label>
@@ -26,7 +26,7 @@
       </form>
 
       {% elif current == 1 %}
-      <h2 style="font-size: 19px">Create your own Google client</h2>
+      <h2 style="font-size: 17px">Create your own Google client</h2>
       <div class="muted">Everyone who uses jevfilter makes their own, so no one else's app ever sees your mail. It takes a few minutes, once.</div>
       <ol class="guide">{% for title, detail in google_steps %}<li><span class="meta" style="padding-top: 1px">{{ loop.index }}</span><span><b>{{ title }}.</b> <span class="muted">{{ detail }}</span></span></li>{% endfor %}</ol>
       <a class="btn" href="https://console.cloud.google.com" target="_blank" rel="noopener" style="align-self: flex-start">Open Google Cloud Console ↗</a>
@@ -42,7 +42,7 @@
       <div class="hint">{{ testing_note }}</div>
 
       {% elif current == 2 %}
-      <h2 style="font-size: 19px">Sign in to Gmail</h2>
+      <h2 style="font-size: 17px">Sign in to Gmail</h2>
       {% if signin.state == "waiting" %}
       <div class="banner" data-signin-waiting><span class="live busy"></span><span class="grow">Finish signing in in the browser tab that just opened…</span></div>
       <div class="hint">{{ signin_note }}</div>
@@ -54,7 +54,7 @@
       {% endif %}
 
       {% elif current == 3 %}
-      <h2 style="font-size: 19px">Pick your topics</h2>
+      <h2 style="font-size: 17px">Pick your topics</h2>
       <div class="muted">{% if account %}Signed in as {{ account }}. {% endif %}A topic is a plain-English description of emails you care about. Start from these and edit them anytime.</div>
       <form method="post" action="/setup/topics" class="stack">
         {% for ex in examples %}
@@ -64,7 +64,7 @@
       </form>
 
       {% else %}
-      <h2 style="font-size: 19px">First scan</h2>
+      <h2 style="font-size: 17px">First scan</h2>
       <div class="muted">How far back should the first scan go? Only your Primary tab is read; you can add Updates and other Gmail categories later in Settings.</div>
       <form method="get" action="/setup" class="stack">
         <div class="radios">{% for label, d in choices.items() %}<label><input type="radio" name="days" value="{{ d }}" {% if (estimate and estimate.days == d) or (not estimate and d == 14) %}checked{% endif %}>{{ label }}</label>{% endfor %}</div>
@@ -75,7 +75,7 @@
         {% else %}
         <div class="grid-2">
           <div class="card card-pad"><div class="small muted">Emails in that window</div><div class="big-number">{{ estimate.count }}</div></div>
-          <div class="card card-pad"><div class="small muted">Estimated cost</div><div class="big-number" style="font-size: 20px">{{ money(estimate.low) }} – {{ money(estimate.high) }}</div></div>
+          <div class="card card-pad"><div class="small muted">Estimated cost</div><div class="big-number" style="font-size: 18px">{{ money(estimate.low) }} – {{ money(estimate.high) }}</div></div>
         </div>
         <form method="post" action="/setup/start" class="stack">
           <input type="hidden" name="days" value="{{ estimate.days }}"><input type="hidden" name="high" value="{{ estimate.high }}">

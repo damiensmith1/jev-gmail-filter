@@ -44,7 +44,7 @@
       {% if f.categories %}<div class="tr head cats label"><span>Name</span><span>What it means</span><span>Examples (; between)</span><span>Not this (; between)</span><span></span></div>{% endif %}
       {% for c in f.categories %}
       <div class="tr cats">
-        <input class="input" name="cat-{{ loop.index0 }}-name" value="{{ c.name }}" aria-label="Category name" style="font-family: var(--mono); font-size: 13px">
+        <input class="input" name="cat-{{ loop.index0 }}-name" value="{{ c.name }}" aria-label="Category name" style="font-family: var(--mono); font-size: 12px">
         <input class="input" name="cat-{{ loop.index0 }}-desc" value="{{ c.description }}" aria-label="What it means">
         <input class="input" name="cat-{{ loop.index0 }}-examples" value="{{ c.examples | join('; ') }}" aria-label="Examples">
         <input class="input" name="cat-{{ loop.index0 }}-not" value="{{ c.exclude }}" aria-label="Not this">
@@ -60,7 +60,7 @@
         <div class="card-head"><h3 class="grow">Details to pull out</h3><span class="hint">picked from the email, never made up</span></div>
         {% for x in f.fields %}
         <div class="tr fieldrows" style="grid-template-columns: 110px 90px minmax(0, 1fr) 30px">
-          <input class="input" name="field-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Name" style="font-family: var(--mono); font-size: 13px">
+          <input class="input" name="field-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Name" style="font-family: var(--mono); font-size: 12px">
           <select class="select" name="field-{{ loop.index0 }}-kind" aria-label="Kind">{% for k in kinds %}<option {% if k == x.kind %}selected{% endif %}>{{ k }}</option>{% endfor %}</select>
           <input class="input" name="field-{{ loop.index0 }}-about" value="{{ x.about }}" aria-label="What it is" placeholder="What it is">
           <button class="btn btn-quiet" name="action" value="del-field-{{ loop.index0 }}" aria-label="Remove">{{ icon("x", 14) }}</button>
@@ -74,7 +74,7 @@
         <div class="card-head"><h3 class="grow">Yes/no flags</h3><span class="hint">e.g. needs_reply</span></div>
         {% for x in f.flags %}
         <div class="tr flagrows" style="grid-template-columns: 120px minmax(0, 1fr) 30px">
-          <input class="input" name="flag-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Flag name" style="font-family: var(--mono); font-size: 13px">
+          <input class="input" name="flag-{{ loop.index0 }}-name" value="{{ x.name }}" aria-label="Flag name" style="font-family: var(--mono); font-size: 12px">
           <input class="input" name="flag-{{ loop.index0 }}-statement" value="{{ x.statement }}" aria-label="True when" placeholder="True when…">
           <button class="btn btn-quiet" name="action" value="del-flag-{{ loop.index0 }}" aria-label="Remove">{{ icon("x", 14) }}</button>
         </div>
@@ -121,7 +121,7 @@
         </div>
         <div class="hint">Between “no” and “yes”, emails go to Needs you.</div>
         {% if f.advanced_keys %}<div class="hint">This topic also uses {{ f.advanced_keys | join(", ") }}, editable in YAML.</div>{% endif %}
-        <textarea class="textarea" name="yaml" rows="14" style="font-family: var(--mono); font-size: 12px" aria-label="YAML">{{ yaml_text }}</textarea>
+        <textarea class="textarea" name="yaml" rows="14" style="font-family: var(--mono); font-size: 11.5px" aria-label="YAML">{{ yaml_text }}</textarea>
         <div><button class="btn" name="action" value="apply-yaml">Apply YAML to the form</button></div>
       </div>
     </details>
