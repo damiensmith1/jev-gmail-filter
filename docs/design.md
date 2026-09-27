@@ -345,7 +345,8 @@ right-hand context pane.
   **Not &lt;topic&gt;? Remove it** (a correction: labels removed, email
   detached from its item, result marked `user_corrected`), Open in Gmail.
 - **Items** — secondary view: per tracked topic, a board (a column per
-  pipeline status; closed statuses behind a toggle) or a list. Pane: the
+  pipeline status; closed statuses shown by default, hidden with a header
+  toggle) or a list. Pane: the
   item (stage progress, linked emails, notes, status change), or "add an
   item by hand".
 - **Topics** — cards (description, what it pulls out, tracking, label,

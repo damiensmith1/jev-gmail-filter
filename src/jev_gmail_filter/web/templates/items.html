@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Items{% endblock %}
 {% macro link(selected=None, view=None, closed=None) -%}
-/items?{{ {"topic": d.topic, "view": view or d.view, "closed": (1 if (closed if closed is not none else d.show_closed) else 0), "selected": selected} | dictsort | selectattr(1) | list | urlencode }}
+/items?{{ {"topic": d.topic, "view": view or d.view, "closed": ("" if (closed if closed is not none else d.show_closed) else "0"), "selected": selected} | dictsort | selectattr(1) | list | urlencode }}
 {%- endmacro %}
 {% block main %}
 {% if not d.topic %}
@@ -13,6 +13,7 @@
   {% if d.tracked | length > 1 %}
   <nav class="segmented" aria-label="Topic">{% for t in d.tracked %}<a href="/items?topic={{ t | urlencode }}&amp;view={{ d.view }}" {% if t == d.topic %}aria-current="page"{% endif %}>{{ t }}</a>{% endfor %}</nav>
   {% endif %}
+  {% if d.view == "board" and d.closed_count %}<a class="btn btn-quiet" href="{{ link(closed=not d.show_closed) }}" style="border: 1px dashed var(--line)">{% if d.show_closed %}Hide closed · {{ d.closed_count }}{% else %}Show closed · {{ d.closed_count }}{% endif %}</a>{% endif %}
   <nav class="segmented" aria-label="View"><a href="{{ link(view='board') }}" {% if d.view == 'board' %}aria-current="page"{% endif %}>Board</a><a href="{{ link(view='list') }}" {% if d.view == 'list' %}aria-current="page"{% endif %}>List</a></nav>
 </header>
 
@@ -31,7 +32,6 @@
   </section>
   {% endfor %}
 </div>
-{% if d.closed_count %}<a class="btn btn-quiet" href="{{ link(closed=not d.show_closed) }}" style="align-self: flex-start; border: 1px dashed var(--line)">{% if d.show_closed %}Hide closed{% else %}Closed · {{ d.closed_count }}{% endif %}</a>{% endif %}
 {% else %}
 <section class="card">
   {% for c in d.rows %}

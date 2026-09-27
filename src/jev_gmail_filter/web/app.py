@@ -194,7 +194,8 @@ def create_app(
                 topic=topic or None,
                 view="list" if view == "list" else "board",
                 selected=_int(selected),
-                closed=closed not in ("", "0"),
+                # Closed items show unless hidden with closed=0.
+                closed=closed != "0",
             )
         return page(request, "items.html", "items", d=data)
 
