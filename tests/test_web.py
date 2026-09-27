@@ -299,8 +299,17 @@ def test_settings(tmp_path, monkeypatch, inbox):
     assert inbox.labels == {}
     r = client.get("/settings")
     assert "Write Gmail labels" in r.text and "me@example.com" in r.text
-    r = client.post("/settings", data={"labels": "on", "max_usd": "0.5", "auto_minutes": "10"})
-    assert "labelled 2 email(s)" in r.text
+    assert "Also label emails already matched" in r.text
+    r = client.post(
+        "/settings",
+        data={"labels": "on", "label_past": "on", "max_usd": "0.5", "auto_minutes": "10"},
+    )
+    assert "labelling emails matched so far" in r.text
+    rt.wait()
+    assert len(inbox.labels) == 2
+    r = client.get("/settings")
+    assert "Labelling done" in r.text and "Labelled 2 emails" in r.text
+    assert "Also label emails already matched" not in r.text
     with Store(settings.db_path) as s:
         assert (s.get_meta("max_usd"), s.get_meta("auto_sync_minutes")) == ("0.5", "10")
     r = client.post("/settings/categories", data={"cat-primary": "on", "cat-updates": "on"})
@@ -410,3 +419,15 @@ def test_gmail_links_open_the_thread_in_the_connected_account():
     )
     assert gmail_link("abc") == "https://mail.google.com/mail/u/0/#all/abc"
     assert gmail_link(None, "sam@example.com") == "#"
+
+
+def test_labels_on_without_past_leaves_old_mail_alone(tmp_path, monkeypatch, inbox):
+    client, rt, settings = make(tmp_path, monkeypatch, inbox)
+    with Store(settings.db_path) as s:
+        s.set_meta("labels", "off")
+    client.post("/sync")
+    rt.wait()
+    r = client.post("/settings", data={"labels": "on", "max_usd": "1", "auto_minutes": "0"})
+    assert "Settings saved" in r.text and inbox.labels == {}
+    with Store(settings.db_path) as s:
+        assert s.get_meta("labels") == "on"

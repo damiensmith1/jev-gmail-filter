@@ -360,7 +360,7 @@ def cmd_labels(args: argparse.Namespace, settings: Settings, connect: Connect | 
         return 0
     p = _open(settings, connect, labels=True)
     p.store.set_meta("labels", "on")
-    print(f"labels on; labelled {p.apply_labels_to_matches()} email(s) matched so far")
+    print(f"labels on; labelled {p.apply_labels_to_matches().labelled} email(s) matched so far")
     return 0
 
 

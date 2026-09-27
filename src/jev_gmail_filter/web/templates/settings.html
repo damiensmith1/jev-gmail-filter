@@ -5,7 +5,8 @@
 
 <form method="post" action="/settings" class="card card-pad stack" style="gap: 16px">
   <h2>Syncing</h2>
-  <label class="check"><input type="checkbox" name="labels" value="on" {% if labels_on %}checked{% endif %}><span><b>Write Gmail labels</b><br><span class="hint">Off is a dry run: emails are judged and stored but not labelled. Turning it on labels everything matched so far.</span></span></label>
+  <label class="check"><input type="checkbox" name="labels" value="on" {% if labels_on %}checked{% endif %}><span><b>Write Gmail labels</b><br><span class="hint">Off is a dry run: emails are judged and stored but not labelled.</span></span></label>
+  {% if not labels_on %}<label class="check" style="margin-left: 24px"><input type="checkbox" name="label_past" value="on"><span>Also label emails already matched<br><span class="hint">Runs in the background, one Gmail call per email. Otherwise only new mail gets labels.</span></span></label>{% endif %}
   <div class="grid-2">
     <label class="field"><span>Spend cap per sync (USD)</span><input class="input" type="number" name="max_usd" step="0.25" min="0.01" value="{{ max_usd }}"><span class="hint">A sync stops before going over; run it again to continue.</span></label>
     <label class="field"><span>Sync automatically every … minutes</span><input class="input" type="number" name="auto_minutes" min="0" max="1440" value="{{ auto_minutes }}"><span class="hint">0 is off. Runs while this app is open.</span></label>

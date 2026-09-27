@@ -16,7 +16,8 @@
         if (job.finished) { location.reload(); return; }
         if (job.total) {
           fill.style.width = Math.round((job.n / job.total) * 100) + "%";
-          text.textContent = `${job.kind}: judged ${job.n} of ${job.total} emails…`;
+          const verb = job.kind === "Labelling" ? "labelled" : "judged";
+          text.textContent = `${job.kind}: ${verb} ${job.n} of ${job.total} emails…`;
         }
       } catch (e) { /* server restarting; try again */ }
       setTimeout(tick, 1000);

@@ -30,7 +30,7 @@ Connect = Callable[[Settings], MailSource]
 
 @dataclass
 class ScanJob:
-    kind: str  # "First scan", "Sync", "Rescan", "Re-check"
+    kind: str  # "First scan", "Sync", "Rescan", "Re-check", "Labelling"
     labels_on: bool
     n: int = 0
     total: int = 0
@@ -157,6 +157,8 @@ class Runtime:
                     p = self.pipeline(s, budget=budget, labels=write)
                     if kind == "Re-check":
                         job.report = p.recheck_reviews(progress=job.progress)
+                    elif kind == "Labelling":
+                        job.report = p.apply_labels_to_matches(progress=job.progress)
                     else:
                         job.report = p.sync(since=since, progress=job.progress)
             except Exception as e:  # shown in the UI; the scan resumes next time

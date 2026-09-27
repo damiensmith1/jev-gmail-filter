@@ -473,9 +473,13 @@ def create_app(
             s.set_meta("max_usd", f"{max(float(form.get('max_usd') or 1), 0.01):g}")
             s.set_meta("auto_sync_minutes", str(max(int(form.get("auto_minutes") or 0), 0)))
             message = "Settings saved"
-            if labels_on and not was_on:
-                n = rt.pipeline(s, labels=True).apply_labels_to_matches()
-                message = f"Labels on; labelled {n} email(s) matched so far"
+        # Labelling past matches is one Gmail call per email, so it runs in the
+        # background with the scan banner instead of holding up this request.
+        if labels_on and not was_on and form.get("label_past") == "on":
+            if rt.start_scan("Labelling", labels=True):
+                message = "Labels on; labelling emails matched so far"
+            else:
+                message = "Labels on. A sync is running; label past matches once it's done"
         return RedirectResponse("/settings?" + urlencode({"flash": message}), 303)
 
     @app.post("/settings/categories")
@@ -665,6 +669,7 @@ def _report(job: Any) -> dict | None:
         "stopped": r.stopped,
         "errors": r.errors,
         "labels_on": job.labels_on,
+        "labelled": r.labelled,
     }
 
 

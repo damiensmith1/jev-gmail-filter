@@ -282,7 +282,9 @@ Package `jev_gmail_filter` (CLI `jev-gmail-filter`):
 - Judging uses jevfilter's staged mode (`speculative=False`): most mail
   matches no topic, so membership is asked first.
 - Labels: a match gets `<label>` and `<label>/<category>`. Labels can be
-  off (dry run); `labels` turns them on and labels past matches. A failed
+  off (dry run); `labels` turns them on and labels past matches. In the UI,
+  labelling past matches is opt-in when turning labels on and runs in the
+  background with the scan banner (one Gmail call per email). A failed
   label write is reported, never loses the judgment.
 - Gmail rate limits: Gmail allows 6,000 quota units per user per minute,
   and fetching a full message costs 20, so a fast backscan (~300+ emails a
@@ -357,7 +359,8 @@ right-hand context pane.
   needs no client state. Problems block Save; an unchanged Save leaves the
   file untouched; a changed topic offers a rescan. Pane: **Try it** on a
   recent or pasted email.
-- **Settings** — labels (turning on labels past matches), spend cap per
+- **Settings** — labels (turning on can also label past matches, in the
+  background), spend cap per
   sync, auto-sync interval, Gmail categories (with counts on request),
   account and sign out.
 - **Setup** (until done) — a stepper and one card per step: API key, the

@@ -36,6 +36,7 @@ class SyncReport:
     items_created: int = 0
     items_updated: int = 0
     cost_usd: float = 0.0
+    labelled: int = 0  # emails labelled by apply_labels_to_matches
     stopped: str | None = None  # why the sync stopped early (e.g. budget)
     errors: list[str] = field(default_factory=list)
 
@@ -445,17 +446,21 @@ class Pipeline:
             self.store.set_item_status(item_id, status, last_stage)
             self.store.add_event(item_id, "manual", status)
 
-    def apply_labels_to_matches(self) -> int:
+    def apply_labels_to_matches(self, progress: Any = None) -> SyncReport:
         """Label every email already judged a match (e.g. after a dry run)."""
         report = SyncReport()
-        count = 0
+        todo = []
         for topic in self.topics.values():
             for gmail_id, data in self.store.matches(topic.name, topic.version):
                 labels = self._labels(topic, jf.TopicResult.from_dict(data))
                 if labels:
-                    self._apply_labels(gmail_id, labels, report)
-                    count += 1
-        return count
+                    todo.append((gmail_id, labels))
+        for i, (gmail_id, labels) in enumerate(todo):
+            if progress:
+                progress(i, len(todo))
+            self._apply_labels(gmail_id, labels, report)
+            report.labelled += 1
+        return report
 
 
 def _as_match(suggestion: dict[str, Any]) -> jf.TopicResult:

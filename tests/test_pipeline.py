@@ -173,7 +173,7 @@ def test_dry_run_writes_no_labels_then_labels_apply(store, mail, topics, fake_ju
     dry.sync()
     assert mail.labels == {}
     live = Pipeline(store, mail, topics, judge=fake_judge)
-    assert live.apply_labels_to_matches() == 1
+    assert live.apply_labels_to_matches().labelled == 1
     assert mail.labels == {"a": ["Jobs", "Jobs/applied"]}
 
 

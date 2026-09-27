@@ -1,7 +1,7 @@
 {% if scan and not scan.finished %}
 <div class="banner" role="status">
   <span class="live busy"></span>
-  <span data-scan-text>{{ scan.kind }}: {% if scan.total %}judged {{ scan.n }} of {{ scan.total }} emails…{% else %}checking your inbox…{% endif %}</span>
+  <span data-scan-text>{{ scan.kind }}: {% if scan.total %}{{ "labelled" if scan.kind == "Labelling" else "judged" }} {{ scan.n }} of {{ scan.total }} emails…{% else %}checking your inbox…{% endif %}</span>
   <div class="progress" data-scan-progress><span style="width: {{ (scan.n / scan.total * 100) | round if scan.total else 0 }}%"></span></div>
   <span class="hint">You can keep using the app.</span>
 </div>
@@ -12,12 +12,17 @@
       <b>{{ scan_report.kind }} failed:</b> {{ scan_report.error }}. Try again; mail already judged is skipped.
     {% else %}
       <b>{{ scan_report.kind }} done.</b>
+      {% if scan_report.kind == "Labelling" %}
+      Labelled {{ scan_report.labelled }} email{{ "" if scan_report.labelled == 1 else "s" }} matched so far.
+      {% for e in scan_report.errors %}<br>{{ e }}{% endfor %}
+      {% else %}
       Judged {{ scan_report.judged }} new email{{ "" if scan_report.judged == 1 else "s" }}{% if scan_report.matched %}, matched {% for t, n in scan_report.matched.items() %}{{ t }} {{ n }}{{ ", " if not loop.last }}{% endfor %}{% endif %}.
       {% if scan_report.reviews %}{{ scan_report.reviews }} need you. {% endif %}
       {% if scan_report.created or scan_report.updated %}Items: {{ scan_report.created }} new, {{ scan_report.updated }} updated. {% endif %}
       <span class="meta">{{ money(scan_report.cost) }}</span>{% if not scan_report.labels_on %} · labels off (dry run){% endif %}
       {% if scan_report.stopped %}<br>Stopped early: {{ scan_report.stopped }}{% endif %}
       {% for e in scan_report.errors %}<br>{{ e }}{% endfor %}
+      {% endif %}
     {% endif %}
   </div>
   <form method="post" action="/scan/dismiss"><button class="btn btn-quiet">Dismiss</button></form>
