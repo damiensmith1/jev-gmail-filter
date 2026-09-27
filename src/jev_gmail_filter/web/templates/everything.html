@@ -44,7 +44,7 @@
 <aside class="pane" aria-label="Selected email">
   <div>
     <div class="small muted">{{ x.sender }} · {{ x.when }}</div>
-    <h2 style="font-size: 22px; margin-top: 6px; line-height: 1.25">{{ x.subject or "(no subject)" }}</h2>
+    <h2 style="font-size: 17px; margin-top: 6px; line-height: 1.3">{{ x.subject or "(no subject)" }}</h2>
   </div>
   {% for v in x.verdicts %}
   <div class="card card-pad stack" style="background: var(--raised)">

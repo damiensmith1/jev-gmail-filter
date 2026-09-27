@@ -1,6 +1,5 @@
 {% from "_icons.html" import icon %}
 <nav class="nav" aria-label="Main">
-  <a class="brand" href="/"><span class="brand-mark">j</span><span class="brand-name">jevfilter</span></a>
   <div class="nav-list">
     <a class="nav-link" href="/" {% if nav.active == "overview" %}aria-current="page"{% endif %}>{{ icon("overview") }}<span class="grow">Overview</span></a>
     <a class="nav-link" href="/needs" {% if nav.active == "needs" %}aria-current="page"{% endif %}>{{ icon("needs") }}<span class="grow">Needs you</span>{% if nav.needs %}<span class="chip chip-solid">{{ nav.needs }}</span>{% endif %}</a>
